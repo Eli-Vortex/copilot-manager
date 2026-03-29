@@ -117,7 +117,7 @@ export function startInstance(groupId: string): { ok: boolean; error?: string } 
   instances.set(groupId, state)
 
   try {
-    const proc = Bun.spawn(["bun", "run", COPILOT_API_ENTRY, "start", "--port", String(group.port)], {
+    const proc = Bun.spawn([process.execPath, "run", COPILOT_API_ENTRY, "start", "--port", String(group.port)], {
       cwd: COPILOT_API_DIR,
       env: {
         ...process.env,
