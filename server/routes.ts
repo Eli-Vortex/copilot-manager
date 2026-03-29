@@ -259,7 +259,7 @@ api.get("/system/info", async (c) => {
   try {
     const b = await runCommand("git", ["rev-parse", "--abbrev-ref", "HEAD"], PROJECT_ROOT)
     gitBranch = b.output.trim()
-    const h = await runCommand("git", ["log", "-1", "--format=%h %s (%cr)"], PROJECT_ROOT)
+    const h = await runCommand("git", ["log", "-1", "--format=%h %s %cr"], PROJECT_ROOT)
     gitCommit = h.output.trim()
     const r = await runCommand("git", ["remote", "get-url", "origin"], PROJECT_ROOT)
     gitRemote = r.output.trim()
@@ -281,14 +281,14 @@ api.post("/system/update", async (c) => {
     }
 
     updateLog.push("=== Step 2/3: bun install ===")
-    const install = await runCommand("bun", ["install"], PROJECT_ROOT)
+    const install = await runCommand(process.execPath, ["install"], PROJECT_ROOT)
     if (install.code !== 0) {
       updateLog.push(`bun install failed (exit ${install.code})`)
       return c.json({ ok: false, error: "bun install failed", log: updateLog })
     }
 
     updateLog.push("=== Step 3/3: bun run build ===")
-    const build = await runCommand("bun", ["run", "build"], PROJECT_ROOT)
+    const build = await runCommand(process.execPath, ["run", "build"], PROJECT_ROOT)
     if (build.code !== 0) {
       updateLog.push(`build failed (exit ${build.code})`)
       return c.json({ ok: false, error: "build failed", log: updateLog })
