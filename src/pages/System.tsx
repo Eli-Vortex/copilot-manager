@@ -4,7 +4,7 @@ import { RefreshCw, Loader2, GitBranch, GitCommit, ExternalLink } from "lucide-r
 import { api } from "../api"
 
 export default function System() {
-  const [info, setInfo] = useState<{ gitBranch: string; gitCommit: string; gitRemote: string; updateRunning: boolean } | null>(null)
+  const [info, setInfo] = useState<{ gitBranch: string; gitHash: string; gitMessage: string; gitTime: string; gitRemote: string; updateRunning: boolean } | null>(null)
   const [updating, setUpdating] = useState(false)
   const [log, setLog] = useState<string[]>([])
   const [result, setResult] = useState<{ ok: boolean; error?: string } | null>(null)
@@ -50,10 +50,14 @@ export default function System() {
               <span className="text-sm text-gray-300">分支:</span>
               <code className="text-sm text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded">{info.gitBranch || "N/A"}</code>
             </div>
-            <div className="flex items-center gap-3">
-              <GitCommit className="w-4 h-4 text-gray-400" />
-              <span className="text-sm text-gray-300">最新提交:</span>
-              <code className="text-sm text-gray-100 bg-surface-700 px-2 py-0.5 rounded">{info.gitCommit || "N/A"}</code>
+            <div className="flex items-start gap-3">
+              <GitCommit className="w-4 h-4 text-gray-400 mt-0.5" />
+              <span className="text-sm text-gray-300 shrink-0">最新提交:</span>
+              <div className="flex items-center gap-2 flex-wrap">
+                <code className="text-xs text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded font-mono">{info.gitHash || "N/A"}</code>
+                <span className="text-sm text-gray-100">{info.gitMessage || ""}</span>
+                {info.gitTime && <span className="text-xs text-gray-500">{info.gitTime}</span>}
+              </div>
             </div>
             {info.gitRemote && (
               <div className="flex items-center gap-3">

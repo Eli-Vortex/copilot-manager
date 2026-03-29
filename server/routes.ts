@@ -10,6 +10,7 @@ import {
   getInstanceStatus,
   getInstanceLogs,
   getAllInstanceStatuses,
+  shutdownAll,
 } from "./process-manager"
 
 export const api = new Hono()
@@ -243,7 +244,7 @@ let updateRunning = false
 
 function runCommand(cmd: string, args: string[], cwd: string): Promise<{ code: number; output: string }> {
   return new Promise((resolve) => {
-    const proc = spawn(cmd, args, { cwd, shell: true })
+    const proc = spawn(cmd, args, { cwd })
     let output = ""
     proc.stdout?.on("data", (d: Buffer) => { const s = d.toString(); output += s; updateLog.push(`[stdout] ${s.trimEnd()}`) })
     proc.stderr?.on("data", (d: Buffer) => { const s = d.toString(); output += s; updateLog.push(`[stderr] ${s.trimEnd()}`) })
@@ -254,17 +255,23 @@ function runCommand(cmd: string, args: string[], cwd: string): Promise<{ code: n
 
 api.get("/system/info", async (c) => {
   let gitBranch = ""
-  let gitCommit = ""
+  let gitHash = ""
+  let gitMessage = ""
+  let gitTime = ""
   let gitRemote = ""
   try {
     const b = await runCommand("git", ["rev-parse", "--abbrev-ref", "HEAD"], PROJECT_ROOT)
     gitBranch = b.output.trim()
-    const h = await runCommand("git", ["log", "-1", "--format=%h %s %cr"], PROJECT_ROOT)
-    gitCommit = h.output.trim()
+    const h = await runCommand("git", ["log", "-1", "--format=%h"], PROJECT_ROOT)
+    gitHash = h.output.trim()
+    const m = await runCommand("git", ["log", "-1", "--format=%s"], PROJECT_ROOT)
+    gitMessage = m.output.trim()
+    const t = await runCommand("git", ["log", "-1", "--format=%cr"], PROJECT_ROOT)
+    gitTime = t.output.trim()
     const r = await runCommand("git", ["remote", "get-url", "origin"], PROJECT_ROOT)
     gitRemote = r.output.trim()
   } catch {}
-  return c.json({ gitBranch, gitCommit, gitRemote, updateRunning })
+  return c.json({ gitBranch, gitHash, gitMessage, gitTime, gitRemote, updateRunning })
 })
 
 api.post("/system/update", async (c) => {
@@ -273,28 +280,33 @@ api.post("/system/update", async (c) => {
   updateLog = []
 
   try {
-    updateLog.push("=== Step 1/3: git pull ===")
+    updateLog.push("=== Step 0/4: Stopping all instances ===")
+    shutdownAll()
+    updateLog.push("All instances stopped")
+
+    updateLog.push("=== Step 1/4: git pull ===")
     const pull = await runCommand("git", ["pull"], PROJECT_ROOT)
     if (pull.code !== 0) {
       updateLog.push(`git pull failed (exit ${pull.code})`)
       return c.json({ ok: false, error: "git pull failed", log: updateLog })
     }
 
-    updateLog.push("=== Step 2/3: bun install ===")
+    updateLog.push("=== Step 2/4: bun install ===")
     const install = await runCommand(process.execPath, ["install"], PROJECT_ROOT)
     if (install.code !== 0) {
       updateLog.push(`bun install failed (exit ${install.code})`)
       return c.json({ ok: false, error: "bun install failed", log: updateLog })
     }
 
-    updateLog.push("=== Step 3/3: bun run build ===")
+    updateLog.push("=== Step 3/4: bun run build ===")
     const build = await runCommand(process.execPath, ["run", "build"], PROJECT_ROOT)
     if (build.code !== 0) {
       updateLog.push(`build failed (exit ${build.code})`)
       return c.json({ ok: false, error: "build failed", log: updateLog })
     }
 
-    updateLog.push("=== Update complete! Restarting in 2s... ===")
+    updateLog.push("=== Step 4/4: Restarting service ===")
+    updateLog.push("Service will restart in 2 seconds...")
 
     setTimeout(() => {
       process.exit(0)
