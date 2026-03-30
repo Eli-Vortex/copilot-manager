@@ -13,6 +13,8 @@ import type { TierRoutingContext } from "./routing"
 import type { AccountStatus, AccountUsageSummary } from "./subscription"
 
 import { runWithAccount } from "./account-context"
+import { recordAccountRequest } from "./account-state"
+import { setApiKeyResetDate } from "./api-key-usage"
 import { getRoutingConfig } from "./config"
 import { buildRoutingContext, filterAndSortByTier } from "./routing"
 import { extractUsageSummary } from "./subscription"
@@ -28,15 +30,22 @@ interface AccountState {
   accountType: string
   tier: string
   active: boolean
+  priority?: number
   refreshController?: AbortController
   // Runtime status
   status: AccountStatus
   lastError?: string
   usageSummary?: AccountUsageSummary
+  cooldownUntil?: number
+  cooldownReason?: string
+  // Last request tracking
+  lastRequestTime?: number
+  lastRequestModel?: string
   // Available models fetched from Copilot API
   modelCatalogKnown: boolean
   availableModels: Set<string>
   availableModelData: Array<Model>
+  unsupportedModels: Set<string>
 }
 
 interface SessionEntry {
@@ -53,6 +62,8 @@ export interface AccountInfo {
   status: AccountStatus
   lastError?: string
   usageSummary?: AccountUsageSummary
+  lastRequestTime?: number
+  lastRequestModel?: string
   modelCatalogKnown: boolean
   availableModelCount: number
   availableModels: Array<string>
@@ -61,7 +72,6 @@ export interface AccountInfo {
 export class AccountManager {
   private accounts = new Map<string, AccountState>()
   private sessionMap = new Map<string, SessionEntry>()
-  private roundRobinIndex = 0
   private pruneTimer: ReturnType<typeof setInterval> | null = null
   private routingCtx: TierRoutingContext
 
@@ -178,11 +188,13 @@ export class AccountManager {
         accountType,
         tier,
         active: config.active !== false,
+        priority: config.priority,
         status,
         usageSummary,
         modelCatalogKnown,
         availableModels: new Set(availableModelData.map((m) => m.id)),
         availableModelData,
+        unsupportedModels: new Set<string>(),
       }
 
       if (refreshIn > 0) {
@@ -208,12 +220,14 @@ export class AccountManager {
         accountType,
         tier,
         active: false,
+        priority: config.priority,
         status: "error",
         lastError:
           error instanceof Error ? error.message : "Failed to get token",
         modelCatalogKnown: false,
         availableModels: new Set<string>(),
         availableModelData: [],
+        unsupportedModels: new Set<string>(),
       }
     }
   }
@@ -263,6 +277,14 @@ export class AccountManager {
       }
       eligibleAccounts = withModel
 
+      // Also exclude accounts where the model was previously unavailable at runtime
+      eligibleAccounts = eligibleAccounts.filter(
+        (a) => !a.unsupportedModels.has(model),
+      )
+      if (eligibleAccounts.length === 0) {
+        return undefined
+      }
+
       // Soft sort: among eligible, prefer lower tiers to save premium quota.
       eligibleAccounts = filterAndSortByTier(
         eligibleAccounts,
@@ -275,35 +297,96 @@ export class AccountManager {
       }
     }
 
-    // Session affinity: if we have a session ID, try to reuse the same account
+    // Session affinity: reuse the same account if it's still operational
     if (sessionId) {
       const session = this.sessionMap.get(sessionId)
       if (session) {
         const account = this.accounts.get(session.accountName)
-        // Check session account is still eligible for this model
-        if (
+        const now = Date.now()
+        const isUsable =
           account?.active
           && account.status === "ready"
-          && eligibleAccounts.some((a) => a.name === account.name)
-        ) {
-          session.lastSeen = Date.now()
+          && (!account.cooldownUntil || account.cooldownUntil <= now)
+
+        if (isUsable) {
+          session.lastSeen = now
+          this.recordRequest(account, model)
           return this.toContext(account)
         }
-        // Account no longer usable for this model, remove stale session
+
+        // Account is truly down — remove stale session
         this.sessionMap.delete(sessionId)
       }
 
-      // Assign a new account for this session
-      const selectedAccount = this.selectNextAccount(eligibleAccounts)
+      // Assign new account from eligible pool
+      const selectedAccount = this.selectBestAccount(eligibleAccounts)
       this.sessionMap.set(sessionId, {
         accountName: selectedAccount.name,
         lastSeen: Date.now(),
       })
+      this.recordRequest(selectedAccount, model)
       return this.toContext(selectedAccount)
     }
 
-    // No session ID: round-robin among eligible accounts
-    return this.toContext(this.selectNextAccount(eligibleAccounts))
+    // No session ID: use best available (priority-first)
+    const selected = this.selectBestAccount(eligibleAccounts)
+    this.recordRequest(selected, model)
+    return this.toContext(selected)
+  }
+
+  markAccountCooldown(
+    accountName: string,
+    durationMs: number,
+    reason: string,
+  ): void {
+    const account = this.accounts.get(accountName)
+    if (!account) return
+    account.cooldownUntil = Date.now() + durationMs
+    account.cooldownReason = reason
+    consola.warn(
+      `Account ${accountName} cooled down for ${Math.round(durationMs / 1000)}s: ${reason}`,
+    )
+  }
+
+  markModelUnavailable(accountName: string, model: string): void {
+    const account = this.accounts.get(accountName)
+    if (!account) return
+    account.unsupportedModels.add(model)
+    consola.warn(`Model ${model} marked unavailable for account ${accountName}`)
+  }
+
+  resolveFailoverAccount(
+    sessionId: string | undefined,
+    model: string | undefined,
+    excludeNames: Set<string>,
+  ): AccountContext | undefined {
+    let eligible = this.getActiveAccounts().filter(
+      (a) => !excludeNames.has(a.name),
+    )
+    if (eligible.length === 0) return undefined
+
+    if (model) {
+      const withCatalog = eligible.filter((a) => a.modelCatalogKnown)
+      if (withCatalog.length === 0) return undefined
+      const withModel = withCatalog.filter(
+        (a) => a.availableModels.has(model) && !a.unsupportedModels.has(model),
+      )
+      if (withModel.length === 0) return undefined
+      eligible = filterAndSortByTier(withModel, model, this.routingCtx)
+      if (eligible.length === 0) return undefined
+    }
+
+    const selected = this.selectBestAccount(eligible)
+
+    if (sessionId) {
+      this.sessionMap.set(sessionId, {
+        accountName: selected.name,
+        lastSeen: Date.now(),
+      })
+    }
+
+    this.recordRequest(selected, model)
+    return this.toContext(selected)
   }
 
   hasAccounts(): boolean {
@@ -369,6 +452,8 @@ export class AccountManager {
         status: account.status,
         lastError: account.lastError,
         usageSummary: account.usageSummary,
+        lastRequestTime: account.lastRequestTime,
+        lastRequestModel: account.lastRequestModel,
         modelCatalogKnown: account.modelCatalogKnown,
         availableModelCount: account.availableModels.size,
         availableModels: [...account.availableModels].sort(),
@@ -405,6 +490,15 @@ export class AccountManager {
     })
 
     await Promise.allSettled(tasks)
+
+    // Sync Copilot quota reset date for API key usage tracking.
+    // Use the first account that has a known reset date.
+    for (const account of this.accounts.values()) {
+      if (account.usageSummary?.resetDate) {
+        setApiKeyResetDate(account.usageSummary.resetDate)
+        break
+      }
+    }
   }
 
   shutdown(): void {
@@ -421,22 +515,44 @@ export class AccountManager {
   }
 
   private getActiveAccounts(): Array<AccountState> {
+    const now = Date.now()
     return [...this.accounts.values()].filter(
-      (a) => a.active && a.status === "ready",
+      (a) =>
+        a.active
+        && a.status === "ready"
+        && (!a.cooldownUntil || a.cooldownUntil <= now),
     )
   }
 
-  private selectNextAccount(activeAccounts: Array<AccountState>): AccountState {
-    const withUsage = activeAccounts.filter(
-      (a) => a.usageSummary && !a.usageSummary.premium.unlimited,
-    )
-    if (withUsage.length > 0) {
-      withUsage.sort((a, b) => b.usageSummary!.premium.remaining - a.usageSummary!.premium.remaining)
-      return withUsage[0]
+  /**
+   * Select the best available account from candidates.
+   * Strategy: priority-first (lower number = higher priority).
+   * Among equal priorities, prefer the account with fewer active sessions.
+   */
+  private selectBestAccount(candidates: Array<AccountState>): AccountState {
+    const sorted = [...candidates].sort((a, b) => {
+      const pa = a.priority ?? 100
+      const pb = b.priority ?? 100
+      if (pa !== pb) return pa - pb
+
+      const ra = a.usageSummary?.premium.unlimited ? Infinity : (a.usageSummary?.premium.remaining ?? -1)
+      const rb = b.usageSummary?.premium.unlimited ? Infinity : (b.usageSummary?.premium.remaining ?? -1)
+      if (ra !== rb && ra >= 0 && rb >= 0) return rb - ra
+
+      const sessionsA = this.countSessionsForAccount(a.name)
+      const sessionsB = this.countSessionsForAccount(b.name)
+      return sessionsA - sessionsB
+    })
+
+    return sorted[0]
+  }
+
+  private countSessionsForAccount(accountName: string): number {
+    let count = 0
+    for (const entry of this.sessionMap.values()) {
+      if (entry.accountName === accountName) count++
     }
-    const index = this.roundRobinIndex % activeAccounts.length
-    this.roundRobinIndex = (this.roundRobinIndex + 1) % activeAccounts.length
-    return activeAccounts[index]
+    return count
   }
 
   private pruneExpiredSessions(): void {
@@ -453,6 +569,14 @@ export class AccountManager {
     if (pruned > 0) {
       consola.debug(`Pruned ${pruned} expired session(s)`)
     }
+  }
+
+  private recordRequest(account: AccountState, model?: string): void {
+    account.lastRequestTime = Date.now()
+    if (model) {
+      account.lastRequestModel = model
+    }
+    recordAccountRequest(account.name, model)
   }
 
   private toContext(account: AccountState): AccountContext {

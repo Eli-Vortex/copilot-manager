@@ -9,6 +9,8 @@ export interface AccountConfig {
   accountType?: string
   tier?: string
   active?: boolean
+  // Lower = higher priority (default 100). Account with lowest priority number is preferred.
+  priority?: number
 }
 
 export interface RoutingConfig {
@@ -18,11 +20,17 @@ export interface RoutingConfig {
   modelTierRequirements?: Record<string, string>
 }
 
+export interface ApiKeyConfig {
+  name: string
+  key: string
+  monthlyPremiumLimit?: number
+}
+
 export interface AppConfig {
   accounts?: Array<AccountConfig>
   routing?: RoutingConfig
   auth?: {
-    apiKeys?: Array<string>
+    apiKeys?: Array<string | ApiKeyConfig>
   }
   providers?: Record<string, ProviderConfig>
   extraPrompts?: Record<string, string>
@@ -319,6 +327,10 @@ export function getAccounts(): Array<AccountConfig> {
 export function getRoutingConfig(): RoutingConfig {
   const config = getConfig()
   return config.routing ?? {}
+}
+
+export function isPremiumModel(model: string): boolean {
+  return model !== getSmallModel()
 }
 
 export function saveAccounts(accounts: Array<AccountConfig>): void {
