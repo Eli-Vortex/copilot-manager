@@ -156,6 +156,26 @@ api.get("/groups/:id/accounts", (c) => {
   return c.json(groups.getAccounts(c.req.param("id")))
 })
 
+api.get("/copilot-status-all", async (c) => {
+  const allGroups = groups.list()
+  const results: Record<string, unknown> = {}
+  const fetches = allGroups
+    .filter((g) => getInstanceStatus(g.id).status === "running")
+    .map(async (g) => {
+      try {
+        const res = await fetch(`http://127.0.0.1:${g.port}/accounts/status`, { signal: AbortSignal.timeout(8000) })
+        if (res.ok) {
+          const data = await res.json() as { accounts?: Array<{ name: string }> }
+          for (const acc of data.accounts || []) {
+            results[acc.name] = { ...acc, _groupName: g.name, _groupPort: g.port }
+          }
+        }
+      } catch {}
+    })
+  await Promise.all(fetches)
+  return c.json(results)
+})
+
 api.get("/groups/:id/copilot-status", async (c) => {
   const id = c.req.param("id")
   const status = getInstanceStatus(id)

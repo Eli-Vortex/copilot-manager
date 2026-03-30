@@ -108,6 +108,8 @@ export const api = {
     copilotModels: (id: string) => request<{ data: Array<{ id: string }> }>(`/groups/${id}/copilot-models`),
   },
 
+  copilotStatusAll: () => request<Record<string, CopilotAccountStatus & { _groupName: string; _groupPort: number }>>("/copilot-status-all"),
+
   accounts: {
     list: () => request<AccountInfo[]>("/accounts"),
     create: (data: { name: string; github_token: string; account_type?: string; tier?: string; active?: boolean; group_id?: string | null }) =>

@@ -47,10 +47,13 @@ const port = Number(process.env.MANAGER_PORT) || 3000
 console.log(`Copilot Manager running at http://localhost:${port}`)
 
 setTimeout(() => {
-  const autoGroups = groups.list().filter((g) => g.auto_start)
+  const allGroups = groups.list()
+  const autoGroups = allGroups.filter((g) => Number(g.auto_start) === 1)
+  console.log(`[auto-start] Found ${allGroups.length} groups, ${autoGroups.length} marked auto-start`)
   for (const g of autoGroups) {
-    console.log(`Auto-starting group: ${g.name} (port ${g.port})`)
-    startInstance(g.id)
+    console.log(`[auto-start] Starting: ${g.name} (port ${g.port})`)
+    const result = startInstance(g.id)
+    console.log(`[auto-start] ${g.name}: ${result.ok ? "ok" : result.error}`)
   }
 }, 3000)
 

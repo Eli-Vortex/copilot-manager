@@ -1,7 +1,7 @@
-import { useEffect, useState, useCallback, useRef } from "react"
-import { Plus, Pencil, Trash2, X, Copy, Eye, EyeOff, Github, KeyRound, Loader2, ExternalLink } from "lucide-react"
+import { useEffect, useState, useCallback, useRef, Fragment } from "react"
+import { Plus, Pencil, Trash2, X, Copy, Eye, EyeOff, Github, KeyRound, Loader2, ExternalLink, ChevronDown, ChevronRight } from "lucide-react"
 
-import { api, type AccountInfo, type GroupInfo } from "../api"
+import { api, type AccountInfo, type GroupInfo, type CopilotAccountStatus } from "../api"
 
 interface FormData {
   name: string
@@ -28,6 +28,8 @@ export default function Accounts() {
   const [saving, setSaving] = useState(false)
   const [filter, setFilter] = useState({ group: "", search: "" })
   const [revealedTokens, setRevealedTokens] = useState<Set<string>>(new Set())
+  const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(new Set())
+  const [copilotStatus, setCopilotStatus] = useState<Record<string, CopilotAccountStatus & { _groupName: string; _groupPort: number }>>({})
 
   const [authMode, setAuthMode] = useState<AuthMode>("choose")
   const [deviceFlowState, setDeviceFlowState] = useState<DeviceFlowState>("idle")
@@ -39,6 +41,7 @@ export default function Accounts() {
     Promise.all([api.accounts.list(), api.groups.list()])
       .then(([a, g]) => { setAccounts(a); setGroups(g); setLoading(false) })
       .catch((e) => { setError(e.message); setLoading(false) })
+    api.copilotStatusAll().then(setCopilotStatus).catch(() => {})
   }, [])
 
   useEffect(() => { load() }, [load])
@@ -146,6 +149,14 @@ export default function Accounts() {
   }
 
   const maskToken = (token: string) => token.slice(0, 8) + "..." + token.slice(-4)
+
+  const toggleExpand = (id: string) => {
+    setExpandedAccounts((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
 
   if (loading) return <div className="p-8 text-gray-500">加载中...</div>
   if (error) return <div className="p-8"><div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4 text-red-400">{error}</div></div>
@@ -335,53 +346,98 @@ export default function Accounts() {
             {filtered.length === 0 ? (
               <tr><td colSpan={7} className="px-5 py-12 text-center text-gray-500">暂无账号</td></tr>
             ) : (
-              filtered.map((a) => (
-                <tr key={a.id} className="border-b border-gray-800/50 hover:bg-surface-700/30 transition-colors">
-                  <td className="px-5 py-3.5 font-medium">{a.name}</td>
-                  <td className="px-5 py-3.5">
-                    <div className="flex items-center gap-1.5">
-                      <code className="text-xs text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded">
-                        {revealedTokens.has(a.id) ? a.github_token : maskToken(a.github_token)}
-                      </code>
-                      <button onClick={() => toggleReveal(a.id)} className="p-1 text-gray-500 hover:text-gray-300 transition-colors">
-                        {revealedTokens.has(a.id) ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                      </button>
-                      <button onClick={() => copyToken(a.github_token)} className="p-1 text-gray-500 hover:text-gray-300 transition-colors">
-                        <Copy className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </td>
-                  <td className="px-5 py-3.5">
-                    {a.group_id ? (
-                      <span className="bg-blue-500/15 text-blue-400 border border-blue-500/30 px-2.5 py-0.5 rounded-full text-xs font-medium">
-                        {groupNameMap.get(a.group_id) || "未知"}
-                      </span>
-                    ) : (
-                      <span className="text-gray-500 text-xs">未分配</span>
+              filtered.map((a) => {
+                const cs = copilotStatus[a.name]
+                const isExpanded = expandedAccounts.has(a.id)
+                return (
+                  <Fragment key={a.id}>
+                    <tr className={`border-b ${isExpanded ? "border-transparent" : "border-gray-800/50"} hover:bg-surface-700/30 transition-colors cursor-pointer`} onClick={() => cs && toggleExpand(a.id)}>
+                      <td className="px-5 py-3.5 font-medium">
+                        <div className="flex items-center gap-2">
+                          {cs ? (
+                            isExpanded ? <ChevronDown className="w-3.5 h-3.5 text-gray-500" /> : <ChevronRight className="w-3.5 h-3.5 text-gray-500" />
+                          ) : <span className="w-3.5" />}
+                          {a.name}
+                        </div>
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <div className="flex items-center gap-1.5">
+                          <code className="text-xs text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded">
+                            {revealedTokens.has(a.id) ? a.github_token : maskToken(a.github_token)}
+                          </code>
+                          <button onClick={(e) => { e.stopPropagation(); toggleReveal(a.id) }} className="p-1 text-gray-500 hover:text-gray-300 transition-colors">
+                            {revealedTokens.has(a.id) ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                          </button>
+                          <button onClick={(e) => { e.stopPropagation(); copyToken(a.github_token) }} className="p-1 text-gray-500 hover:text-gray-300 transition-colors">
+                            <Copy className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                      <td className="px-5 py-3.5">
+                        {a.group_id ? (
+                          <span className="bg-blue-500/15 text-blue-400 border border-blue-500/30 px-2.5 py-0.5 rounded-full text-xs font-medium">
+                            {groupNameMap.get(a.group_id) || "未知"}
+                          </span>
+                        ) : (
+                          <span className="text-gray-500 text-xs">未分配</span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3.5 text-gray-300 text-xs">{a.account_type}</td>
+                      <td className="px-5 py-3.5">
+                        <TierBadge tier={a.tier} />
+                      </td>
+                      <td className="px-5 py-3.5">
+                        {cs ? (
+                          <CopilotStatusBadge status={cs.status} />
+                        ) : (
+                          <span className={`inline-flex items-center gap-1.5 text-xs ${a.active ? "text-emerald-400" : "text-gray-500"}`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${a.active ? "bg-emerald-400" : "bg-gray-500"}`} />
+                            {a.active ? "启用" : "禁用"}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                          <button onClick={() => openEdit(a)} title="编辑" className="p-1.5 rounded-md text-gray-400 hover:text-gray-200 hover:bg-gray-500/15 transition-colors">
+                            <Pencil className="w-4 h-4" />
+                          </button>
+                          <button onClick={() => handleDelete(a.id, a.name)} title="删除" className="p-1.5 rounded-md text-red-400 hover:bg-red-500/15 transition-colors">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                    {cs && isExpanded && (
+                      <tr className="border-b border-gray-800/50">
+                        <td colSpan={7} className="px-5 pb-4 pt-0">
+                          <div className="bg-surface-700/50 rounded-lg p-4 space-y-3 ml-5">
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="text-gray-400">
+                                {cs.plan ? <span className="text-purple-400">{cs.plan.name}</span> : ""}
+                                {cs.quotaResetDate && <span className="text-gray-500 ml-3">重置: {cs.quotaResetDate}</span>}
+                              </span>
+                            </div>
+                            {cs.quota && (
+                              <div className="space-y-2">
+                                <InlineQuotaBar label="Premium" q={cs.quota.premium} />
+                                <InlineQuotaBar label="Chat" q={cs.quota.chat} />
+                                <InlineQuotaBar label="Completions" q={cs.quota.completions} />
+                              </div>
+                            )}
+                            {cs.availableModels && cs.availableModels.length > 0 && (
+                              <div className="text-xs text-gray-500">
+                                <span className="text-gray-400">模型 ({cs.availableModelCount}): </span>
+                                {cs.availableModels.slice(0, 8).join(", ")}
+                                {cs.availableModels.length > 8 && ` ... +${cs.availableModels.length - 8}`}
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
                     )}
-                  </td>
-                  <td className="px-5 py-3.5 text-gray-300 text-xs">{a.account_type}</td>
-                  <td className="px-5 py-3.5">
-                    <TierBadge tier={a.tier} />
-                  </td>
-                  <td className="px-5 py-3.5">
-                    <span className={`inline-flex items-center gap-1.5 text-xs ${a.active ? "text-emerald-400" : "text-gray-500"}`}>
-                      <span className={`w-1.5 h-1.5 rounded-full ${a.active ? "bg-emerald-400" : "bg-gray-500"}`} />
-                      {a.active ? "启用" : "禁用"}
-                    </span>
-                  </td>
-                  <td className="px-5 py-3.5">
-                    <div className="flex items-center justify-end gap-1">
-                      <button onClick={() => openEdit(a)} title="编辑" className="p-1.5 rounded-md text-gray-400 hover:text-gray-200 hover:bg-gray-500/15 transition-colors">
-                        <Pencil className="w-4 h-4" />
-                      </button>
-                      <button onClick={() => handleDelete(a.id, a.name)} title="删除" className="p-1.5 rounded-md text-red-400 hover:bg-red-500/15 transition-colors">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))
+                  </Fragment>
+                )
+              })
             )}
           </tbody>
         </table>
@@ -424,6 +480,39 @@ function FormField({ label, value, onChange, placeholder }: {
       <label className="block text-sm font-medium text-gray-300 mb-1.5">{label}</label>
       <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder}
         className="w-full px-3 py-2 bg-surface-700 border border-gray-700 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/30 transition-colors" />
+    </div>
+  )
+}
+
+function CopilotStatusBadge({ status }: { status: string }) {
+  const m: Record<string, { style: string; label: string }> = {
+    ready: { style: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30", label: "就绪" },
+    quota_exhausted: { style: "bg-red-500/15 text-red-400 border-red-500/30", label: "额度耗尽" },
+    error: { style: "bg-red-500/15 text-red-400 border-red-500/30", label: "错误" },
+    disabled: { style: "bg-gray-500/15 text-gray-400 border-gray-500/30", label: "已禁用" },
+  }
+  const v = m[status] || { style: "bg-gray-500/15 text-gray-400 border-gray-500/30", label: status }
+  return <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${v.style}`}>{v.label}</span>
+}
+
+function InlineQuotaBar({ label, q }: { label: string; q: { used: number; total: number; remaining: number; unlimited: boolean } }) {
+  if (q.unlimited) return (
+    <div className="flex items-center justify-between text-xs">
+      <span className="text-gray-400 w-24">{label}</span>
+      <span className="text-gray-500">unlimited</span>
+    </div>
+  )
+  const pct = q.total > 0 ? Math.min(100, (q.used / q.total) * 100) : 0
+  const color = pct > 90 ? "bg-red-500" : pct > 70 ? "bg-amber-500" : "bg-emerald-500"
+  return (
+    <div className="space-y-0.5">
+      <div className="flex items-center justify-between text-xs">
+        <span className="text-gray-400 w-24">{label}</span>
+        <span className="text-gray-300">{q.used} / {q.total} <span className="text-gray-500">(剩余 {q.remaining})</span></span>
+      </div>
+      <div className="h-1 bg-surface-950 rounded-full overflow-hidden">
+        <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} />
+      </div>
     </div>
   )
 }
