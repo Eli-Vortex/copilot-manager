@@ -427,6 +427,13 @@ export class AccountManager {
   }
 
   private selectNextAccount(activeAccounts: Array<AccountState>): AccountState {
+    const withUsage = activeAccounts.filter(
+      (a) => a.usageSummary && !a.usageSummary.premium.unlimited,
+    )
+    if (withUsage.length > 0) {
+      withUsage.sort((a, b) => b.usageSummary!.premium.remaining - a.usageSummary!.premium.remaining)
+      return withUsage[0]
+    }
     const index = this.roundRobinIndex % activeAccounts.length
     this.roundRobinIndex = (this.roundRobinIndex + 1) % activeAccounts.length
     return activeAccounts[index]

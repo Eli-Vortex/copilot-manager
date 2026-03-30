@@ -13,6 +13,7 @@ import {
 import { createHandlerLogger } from "~/lib/logger"
 import { findEndpointModel } from "~/lib/models"
 import { checkRateLimit } from "~/lib/rate-limit"
+import { getCached, hashPayload, setCache } from "~/lib/response-cache"
 import { state } from "~/lib/state"
 import { generateRequestIdFromPayload, getRootSessionId } from "~/lib/utils"
 import {
@@ -72,6 +73,19 @@ export async function handleCompletion(c: Context) {
   const anthropicPayload = await c.req.json<AnthropicMessagesPayload>()
   logger.debug("Anthropic request payload:", JSON.stringify(anthropicPayload))
 
+  const isStreaming = anthropicPayload.stream !== false
+  const isCompact = isCompactRequest(anthropicPayload)
+
+  if (!isStreaming && !isCompact) {
+    const cacheKey = hashPayload({ model: anthropicPayload.model, messages: anthropicPayload.messages })
+    const cached = getCached(cacheKey)
+    if (cached) {
+      logger.info("Cache hit, returning cached response (saving premium)")
+      return new Response(cached.body, { headers: { "content-type": cached.contentType } })
+    }
+    c.set("_cacheKey", cacheKey)
+  }
+
   const subagentMarker = parseSubagentMarkerFromFirstUser(anthropicPayload)
   if (subagentMarker) {
     logger.debug("Detected Subagent marker:", JSON.stringify(subagentMarker))
@@ -81,7 +95,6 @@ export async function handleCompletion(c: Context) {
   logger.debug("Extracted session ID:", sessionId)
 
   // claude code and opencode compact request detection
-  const isCompact = isCompactRequest(anthropicPayload)
 
   // fix claude code 2.0.28+ warmup request consume premium request, forcing small model if no tools are used
   // set "CLAUDE_CODE_SUBAGENT_MODEL": "you small model" also can avoid this
@@ -179,6 +192,10 @@ const handleWithChatCompletions = async (
       "Translated Anthropic response:",
       JSON.stringify(anthropicResponse),
     )
+    const cacheKey = c.get("_cacheKey") as string | undefined
+    if (cacheKey) {
+      setCache(cacheKey, JSON.stringify(anthropicResponse), "application/json")
+    }
     return c.json(anthropicResponse)
   }
 

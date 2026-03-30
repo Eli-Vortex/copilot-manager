@@ -5,6 +5,7 @@ import { streamSSE, type SSEMessage } from "hono/streaming"
 import { awaitApproval } from "~/lib/approval"
 import { createHandlerLogger } from "~/lib/logger"
 import { checkRateLimit } from "~/lib/rate-limit"
+import { getCached, hashPayload, setCache } from "~/lib/response-cache"
 import { state } from "~/lib/state"
 import { getTokenCount } from "~/lib/tokenizer"
 import { generateRequestIdFromPayload, getUUID, isNullish } from "~/lib/utils"
@@ -21,6 +22,17 @@ export async function handleCompletion(c: Context) {
 
   let payload = await c.req.json<ChatCompletionsPayload>()
   logger.debug("Request payload:", JSON.stringify(payload).slice(-400))
+
+  const isStreaming = payload.stream !== false
+  if (!isStreaming) {
+    const cacheKey = hashPayload({ model: payload.model, messages: payload.messages })
+    const cached = getCached(cacheKey)
+    if (cached) {
+      logger.info("Cache hit, returning cached response (saving premium)")
+      return new Response(cached.body, { headers: { "content-type": cached.contentType } })
+    }
+    c.set("_cacheKey", cacheKey)
+  }
 
   // Find the selected model
   const selectedModel = state.models?.data.find(
@@ -63,6 +75,10 @@ export async function handleCompletion(c: Context) {
 
   if (isNonStreaming(response)) {
     logger.debug("Non-streaming response:", JSON.stringify(response))
+    const cacheKey = c.get("_cacheKey") as string | undefined
+    if (cacheKey) {
+      setCache(cacheKey, JSON.stringify(response), "application/json")
+    }
     return c.json(response)
   }
 
