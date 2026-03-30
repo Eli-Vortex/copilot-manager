@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { Server, Users, Activity, CircleDot } from "lucide-react"
+import { Server, Users, Activity, CircleDot, Monitor, Clock, Cpu } from "lucide-react"
 
 import { api, type DashboardData } from "../api"
 
@@ -96,8 +96,37 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+
+      <div>
+        <h2 className="text-lg font-semibold mb-4">系统信息</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {[
+            { icon: Monitor, label: "版本", value: `v${data.systemInfo.version}`, color: "text-emerald-400" },
+            { icon: Cpu, label: "运行环境", value: data.systemInfo.runtime, color: "text-blue-400" },
+            { icon: Server, label: "平台", value: `${data.systemInfo.platform} (${data.systemInfo.hostname})`, color: "text-purple-400" },
+            { icon: Clock, label: "运行时长", value: formatUptime(data.systemInfo.uptime), color: "text-amber-400" },
+          ].map((item) => (
+            <div key={item.label} className="bg-surface-800 border border-gray-800 rounded-xl px-4 py-3 flex items-center gap-3">
+              <item.icon className={`w-4 h-4 ${item.color}`} />
+              <div>
+                <div className="text-xs text-gray-500">{item.label}</div>
+                <div className="text-sm text-gray-200">{item.value}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   )
+}
+
+function formatUptime(seconds: number): string {
+  const d = Math.floor(seconds / 86400)
+  const h = Math.floor((seconds % 86400) / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  if (d > 0) return `${d}天 ${h}小时`
+  if (h > 0) return `${h}小时 ${m}分钟`
+  return `${m}分钟`
 }
 
 function StatusBadge({ status }: { status: string }) {

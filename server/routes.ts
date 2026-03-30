@@ -2,6 +2,8 @@ import { Hono } from "hono"
 import { spawn } from "node:child_process"
 import path from "node:path"
 
+import os from "node:os"
+
 import { groups, accounts, dashboard } from "./db"
 import {
   startInstance,
@@ -76,7 +78,14 @@ api.get("/dashboard", (c) => {
   const runningCount = Object.values(statuses).filter((s) => s.status === "running").length
   const groupNameMap: Record<string, string> = {}
   for (const g of groups.list()) groupNameMap[g.id] = g.name
-  return c.json({ ...summary, runningInstances: runningCount, instanceStatuses: statuses, groupNames: groupNameMap })
+  const systemInfo = {
+    version: PKG_VERSION,
+    runtime: `Bun ${typeof Bun !== "undefined" ? Bun.version : "unknown"}`,
+    platform: `${os.platform()} ${os.arch()}`,
+    uptime: Math.floor(process.uptime()),
+    hostname: os.hostname(),
+  }
+  return c.json({ ...summary, runningInstances: runningCount, instanceStatuses: statuses, groupNames: groupNameMap, systemInfo })
 })
 
 api.get("/groups", (c) => {

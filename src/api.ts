@@ -41,6 +41,7 @@ export interface DashboardData {
   runningInstances: number
   instanceStatuses: Record<string, { status: string; port: number; startedAt: string | null; errorMessage: string | null }>
   groupNames: Record<string, string>
+  systemInfo: { version: string; runtime: string; platform: string; uptime: number; hostname: string }
 }
 
 export interface DeviceCodeResponse {
