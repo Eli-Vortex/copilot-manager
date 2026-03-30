@@ -74,7 +74,9 @@ api.get("/dashboard", (c) => {
   const summary = dashboard.summary()
   const statuses = getAllInstanceStatuses()
   const runningCount = Object.values(statuses).filter((s) => s.status === "running").length
-  return c.json({ ...summary, runningInstances: runningCount, instanceStatuses: statuses })
+  const groupNameMap: Record<string, string> = {}
+  for (const g of groups.list()) groupNameMap[g.id] = g.name
+  return c.json({ ...summary, runningInstances: runningCount, instanceStatuses: statuses, groupNames: groupNameMap })
 })
 
 api.get("/groups", (c) => {
@@ -259,6 +261,9 @@ api.delete("/accounts/:id", (c) => {
 })
 
 const PROJECT_ROOT = path.resolve(import.meta.dir, "..")
+const PKG_VERSION = (() => {
+  try { return JSON.parse(require("fs").readFileSync(path.join(PROJECT_ROOT, "package.json"), "utf-8")).version } catch { return "0.0.0" }
+})()
 let updateLog: string[] = []
 let updateRunning = false
 
@@ -291,7 +296,7 @@ api.get("/system/info", async (c) => {
     const r = await runCommand("git", ["remote", "get-url", "origin"], PROJECT_ROOT)
     gitRemote = r.output.trim()
   } catch {}
-  return c.json({ gitBranch, gitHash, gitMessage, gitTime, gitRemote, updateRunning })
+  return c.json({ version: PKG_VERSION, gitBranch, gitHash, gitMessage, gitTime, gitRemote, updateRunning })
 })
 
 api.post("/system/check-update", async (c) => {

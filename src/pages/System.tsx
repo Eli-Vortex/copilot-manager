@@ -6,7 +6,7 @@ import { api } from "../api"
 type CheckState = "idle" | "checking" | "up-to-date" | "has-update" | "updating" | "done" | "error"
 
 export default function System() {
-  const [info, setInfo] = useState<{ gitBranch: string; gitHash: string; gitMessage: string; gitTime: string; gitRemote: string; updateRunning: boolean } | null>(null)
+  const [info, setInfo] = useState<{ version: string; gitBranch: string; gitHash: string; gitMessage: string; gitTime: string; gitRemote: string; updateRunning: boolean } | null>(null)
   const [checkState, setCheckState] = useState<CheckState>("idle")
   const [behind, setBehind] = useState(0)
   const [commits, setCommits] = useState<string[]>([])
@@ -67,7 +67,7 @@ export default function System() {
             <div>
               <div className="text-lg font-bold">Copilot Manager</div>
               <div className="flex items-center gap-2 mt-1">
-                <code className="text-sm text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded font-mono">{info?.gitHash || "..."}</code>
+                <code className="text-sm text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded font-semibold">v{info?.version || "..."}</code>
                 <span className="text-xs text-gray-500">{info?.gitBranch || ""}</span>
               </div>
               {info?.gitMessage && (

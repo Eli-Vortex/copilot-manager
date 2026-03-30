@@ -40,6 +40,7 @@ export interface DashboardData {
   activeAccounts: number
   runningInstances: number
   instanceStatuses: Record<string, { status: string; port: number; startedAt: string | null; errorMessage: string | null }>
+  groupNames: Record<string, string>
 }
 
 export interface DeviceCodeResponse {
@@ -120,7 +121,7 @@ export const api = {
   },
 
   system: {
-    info: () => request<{ gitBranch: string; gitHash: string; gitMessage: string; gitTime: string; gitRemote: string; updateRunning: boolean }>("/system/info"),
+    info: () => request<{ version: string; gitBranch: string; gitHash: string; gitMessage: string; gitTime: string; gitRemote: string; updateRunning: boolean }>("/system/info"),
     checkUpdate: () => request<{ behind: number; commits: string[] }>("/system/check-update", { method: "POST" }),
     update: () => request<{ ok: boolean; error?: string; log: string[] }>("/system/update", { method: "POST" }),
     updateLog: () => request<{ log: string[]; running: boolean }>("/system/update-log"),

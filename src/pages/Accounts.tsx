@@ -425,10 +425,11 @@ export default function Accounts() {
                               </div>
                             )}
                             {cs.availableModels && cs.availableModels.length > 0 && (
-                              <div className="text-xs text-gray-500">
-                                <span className="text-gray-400">模型 ({cs.availableModelCount}): </span>
-                                {cs.availableModels.slice(0, 8).join(", ")}
-                                {cs.availableModels.length > 8 && ` ... +${cs.availableModels.length - 8}`}
+                              <div className="text-xs text-gray-500 flex flex-wrap gap-1.5">
+                                <span className="text-gray-400 shrink-0">模型 ({cs.availableModelCount}):</span>
+                                {cs.availableModels.map((m) => (
+                                  <span key={m} className="bg-surface-900 px-1.5 py-0.5 rounded text-gray-400">{m}</span>
+                                ))}
                               </div>
                             )}
                           </div>

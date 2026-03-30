@@ -72,7 +72,7 @@ export default function Dashboard() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-800">
-                  <th className="text-left px-5 py-3 text-gray-400 font-medium">实例 ID</th>
+                  <th className="text-left px-5 py-3 text-gray-400 font-medium">分组名称</th>
                   <th className="text-left px-5 py-3 text-gray-400 font-medium">端口</th>
                   <th className="text-left px-5 py-3 text-gray-400 font-medium">状态</th>
                   <th className="text-left px-5 py-3 text-gray-400 font-medium">启动时间</th>
@@ -81,7 +81,7 @@ export default function Dashboard() {
               <tbody>
                 {instanceEntries.map(([id, status]) => (
                   <tr key={id} className="border-b border-gray-800/50 hover:bg-surface-700/30">
-                    <td className="px-5 py-3 font-mono text-xs text-gray-300">{id.slice(0, 8)}...</td>
+                    <td className="px-5 py-3 font-medium">{data.groupNames?.[id] || id.slice(0, 8)}</td>
                     <td className="px-5 py-3">{status.port}</td>
                     <td className="px-5 py-3">
                       <StatusBadge status={status.status} />
