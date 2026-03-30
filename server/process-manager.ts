@@ -133,9 +133,9 @@ export function startInstance(groupId: string): { ok: boolean; error?: string } 
     readStream(proc.stdout, state)
     readStream(proc.stderr, state)
 
-    setTimeout(async () => {
+    const checkHealth = async (attempt: number) => {
       const current = instances.get(groupId)
-      if (!current || current.process !== proc) return
+      if (!current || current.process !== proc || current.status !== "starting") return
 
       if (proc.exitCode !== null) {
         current.status = "error"
@@ -144,29 +144,22 @@ export function startInstance(groupId: string): { ok: boolean; error?: string } 
       }
 
       try {
-        const resp = await fetch(`http://127.0.0.1:${group.port}/`)
+        const resp = await fetch(`http://127.0.0.1:${group.port}/`, { signal: AbortSignal.timeout(5000) })
         if (resp.ok) {
           current.status = "running"
+          return
         }
-      } catch {
-        // might still be starting, give it more time
-      }
+      } catch {}
 
-      if (current.status === "starting") {
-        setTimeout(async () => {
-          const c = instances.get(groupId)
-          if (!c || c.process !== proc || c.status !== "starting") return
-          try {
-            const resp = await fetch(`http://127.0.0.1:${group.port}/`)
-            c.status = resp.ok ? "running" : "error"
-            if (!resp.ok) c.errorMessage = "Health check failed after startup"
-          } catch {
-            c.status = "error"
-            c.errorMessage = "Health check failed after startup"
-          }
-        }, 8000)
+      if (attempt < 5) {
+        setTimeout(() => checkHealth(attempt + 1), 5000)
+      } else {
+        current.status = "error"
+        current.errorMessage = "Health check failed after 30s"
       }
-    }, 3000)
+    }
+
+    setTimeout(() => checkHealth(1), 5000)
 
     proc.exited.then((code) => {
       const current = instances.get(groupId)

@@ -274,6 +274,18 @@ api.get("/system/info", async (c) => {
   return c.json({ gitBranch, gitHash, gitMessage, gitTime, gitRemote, updateRunning })
 })
 
+api.post("/system/check-update", async (c) => {
+  try {
+    await runCommand("git", ["fetch", "origin"], PROJECT_ROOT)
+    const diff = await runCommand("git", ["log", "HEAD..origin/master", "--oneline"], PROJECT_ROOT)
+    const commits = diff.output.trim().split("\n").filter((l) => l.trim())
+    const behind = commits.length
+    return c.json({ behind, commits: commits.slice(0, 10) })
+  } catch {
+    return c.json({ behind: 0, commits: [] })
+  }
+})
+
 api.post("/system/update", async (c) => {
   if (updateRunning) return c.json({ error: "Update already in progress" }, 409)
   updateRunning = true

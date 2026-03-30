@@ -5,6 +5,8 @@ import { Hono } from "hono"
 import { cors } from "hono/cors"
 
 import { api } from "./routes"
+import { groups } from "./db"
+import { startInstance } from "./process-manager"
 
 const app = new Hono()
 const distDir = path.resolve(import.meta.dir, "..", "dist")
@@ -43,6 +45,14 @@ if (fs.existsSync(distDir)) {
 const port = Number(process.env.MANAGER_PORT) || 3000
 
 console.log(`Copilot Manager running at http://localhost:${port}`)
+
+setTimeout(() => {
+  const autoGroups = groups.list().filter((g) => g.auto_start)
+  for (const g of autoGroups) {
+    console.log(`Auto-starting group: ${g.name} (port ${g.port})`)
+    startInstance(g.id)
+  }
+}, 3000)
 
 export default {
   port,
