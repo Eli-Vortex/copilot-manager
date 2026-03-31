@@ -8,6 +8,7 @@ import { api } from "./routes"
 import { authRoutes, verifyJwt } from "./auth"
 import { groups } from "./db"
 import { startInstance } from "./process-manager"
+import { emailRoutes } from "./email-routes"
 
 const app = new Hono()
 const distDir = path.resolve(import.meta.dir, "..", "dist")
@@ -40,6 +41,7 @@ app.use("/api/*", async (c, next) => {
 })
 
 app.route("/api", api)
+app.route("/api", emailRoutes)
 
 if (fs.existsSync(distDir)) {
   app.get("/*", (c) => {
@@ -73,6 +75,11 @@ setTimeout(() => {
     console.log(`[auto-start] ${g.name}: ${result.ok ? "ok" : result.error}`)
   }
 }, 3000)
+
+setInterval(async () => {
+  const { fetchAllAccounts } = await import("./email-service")
+  fetchAllAccounts().catch(() => undefined)
+}, 5 * 60 * 1000)
 
 export default {
   port,

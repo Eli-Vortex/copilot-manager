@@ -101,6 +101,17 @@ export interface CopilotStatusResponse {
   accounts: CopilotAccountStatus[]
 }
 
+export interface EmailAccountInfo {
+  id: string; name: string; email: string; imap_host: string; imap_port: number
+  use_tls: number; active: number; last_error: string | null; created_at: string
+}
+export interface EmailInfo {
+  id: string; account_id: string; message_id: string; subject: string
+  from_name: string; from_address: string; to_address: string; date: string
+  body_text: string; body_html: string; is_read: number; folder: string
+  fetched_at: string; account_name?: string; account_email?: string
+}
+
 export const api = {
   dashboard: () => request<DashboardData>("/dashboard"),
 
@@ -144,5 +155,30 @@ export const api = {
     updateLog: () => request<{ log: string[]; running: boolean }>("/system/update-log"),
     changePassword: (oldPassword: string, newPassword: string) =>
       request<{ ok: boolean }>("/auth/change-password", { method: "POST", body: JSON.stringify({ oldPassword, newPassword }) }),
+  },
+
+  emailAccounts: {
+    list: () => request<EmailAccountInfo[]>("/email-accounts"),
+    create: (data: { name: string; email: string; password: string; imap_host: string; imap_port: number; use_tls: boolean }) =>
+      request<EmailAccountInfo>("/email-accounts", { method: "POST", body: JSON.stringify(data) }),
+    test: (data: { email: string; password: string; imap_host: string; imap_port: number; use_tls: boolean }) =>
+      request<{ ok: boolean; error?: string }>("/email-accounts/test", { method: "POST", body: JSON.stringify(data) }),
+    update: (id: string, data: { name: string; email: string; password: string; imap_host: string; imap_port: number; use_tls: boolean }) =>
+      request<EmailAccountInfo>(`/email-accounts/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+    delete: (id: string) => request(`/email-accounts/${id}`, { method: "DELETE" }),
+  },
+  emails: {
+    list: (params?: { account_id?: string; limit?: number; offset?: number; unread_only?: boolean }) => {
+      const q = new URLSearchParams()
+      if (params?.account_id) q.set("account_id", params.account_id)
+      if (params?.limit) q.set("limit", String(params.limit))
+      if (params?.offset) q.set("offset", String(params.offset))
+      if (params?.unread_only) q.set("unread_only", "true")
+      return request<EmailInfo[]>(`/emails?${q.toString()}`)
+    },
+    get: (id: string) => request<EmailInfo>(`/emails/${id}`),
+    unreadCount: () => request<{ count: number }>("/emails/unread-count"),
+    fetchAll: () => request<Array<{ accountId: string; name: string; newCount: number; error?: string }>>("/emails/fetch", { method: "POST" }),
+    fetchOne: (accountId: string) => request<{ accountId: string; name: string; newCount: number }>(`/emails/fetch/${accountId}`, { method: "POST" }),
   },
 }

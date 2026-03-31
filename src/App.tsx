@@ -1,19 +1,23 @@
 import { useState, useEffect } from "react"
 import { BrowserRouter, Routes, Route, NavLink, Navigate, useNavigate } from "react-router-dom"
-import { LayoutDashboard, FolderCog, Users, Zap, Settings, LogOut, Sun, Moon } from "lucide-react"
+import { LayoutDashboard, FolderCog, Users, Zap, Settings, LogOut, Sun, Moon, MailOpen, Mail } from "lucide-react"
 
 import Dashboard from "./pages/Dashboard"
 import Groups from "./pages/Groups"
 import Accounts from "./pages/Accounts"
 import System from "./pages/System"
 import Login from "./pages/Login"
-import { getToken, clearToken } from "./api"
+import EmailAccounts from "./pages/EmailAccounts"
+import Emails from "./pages/Emails"
+import { getToken, clearToken, api } from "./api"
 
 const navItems = [
-  { to: "/", icon: LayoutDashboard, label: "仪表盘" },
-  { to: "/groups", icon: FolderCog, label: "分组管理" },
-  { to: "/accounts", icon: Users, label: "账号管理" },
-  { to: "/system", icon: Settings, label: "系统设置" },
+  { to: "/", icon: LayoutDashboard, label: "仪表盘", badge: false },
+  { to: "/groups", icon: FolderCog, label: "分组管理", badge: false },
+  { to: "/accounts", icon: Users, label: "账号管理", badge: false },
+  { to: "/email-accounts", icon: MailOpen, label: "邮箱管理", badge: false },
+  { to: "/emails", icon: Mail, label: "收件箱", badge: true },
+  { to: "/system", icon: Settings, label: "系统设置", badge: false },
 ]
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
@@ -24,11 +28,21 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 function AppLayout() {
   const navigate = useNavigate()
   const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "dark")
+  const [unreadCount, setUnreadCount] = useState(0)
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme)
     localStorage.setItem("theme", theme)
   }, [theme])
+
+  useEffect(() => {
+    const fetchUnread = () => {
+      api.emails.unreadCount().then((r) => setUnreadCount(r.count)).catch(() => {})
+    }
+    fetchUnread()
+    const timer = setInterval(fetchUnread, 30000)
+    return () => clearInterval(timer)
+  }, [])
 
   const toggleTheme = () => setTheme((t) => t === "dark" ? "light" : "dark")
 
@@ -59,7 +73,12 @@ function AppLayout() {
               }
             >
               <item.icon className="w-[18px] h-[18px]" />
-              {item.label}
+              <span className="flex-1">{item.label}</span>
+              {item.badge && unreadCount > 0 && (
+                <span className="bg-red-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center leading-none">
+                  {unreadCount > 99 ? "99+" : unreadCount}
+                </span>
+              )}
             </NavLink>
           ))}
         </nav>
@@ -85,6 +104,8 @@ function AppLayout() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/groups" element={<Groups />} />
           <Route path="/accounts" element={<Accounts />} />
+          <Route path="/email-accounts" element={<EmailAccounts />} />
+          <Route path="/emails" element={<Emails />} />
           <Route path="/system" element={<System />} />
         </Routes>
       </main>

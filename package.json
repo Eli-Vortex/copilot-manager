@@ -17,6 +17,7 @@
     "fetch-event-stream": "^0.1.5",
     "gpt-tokenizer": "^3.0.1",
     "hono": "^4.9.9",
+    "imapflow": "^1.2.18",
     "lucide-react": "^0.513.0",
     "proxy-from-env": "^1.1.0",
     "react": "^19.1.0",

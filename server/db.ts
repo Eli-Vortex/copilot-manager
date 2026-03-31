@@ -262,3 +262,111 @@ export const dashboard = {
 }
 
 export { DATA_DIR }
+
+db.run(`
+  CREATE TABLE IF NOT EXISTS email_accounts (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    email TEXT NOT NULL,
+    password TEXT NOT NULL,
+    imap_host TEXT NOT NULL,
+    imap_port INTEGER DEFAULT 993,
+    use_tls INTEGER DEFAULT 1,
+    active INTEGER DEFAULT 1,
+    last_error TEXT DEFAULT NULL,
+    created_at TEXT DEFAULT (datetime('now'))
+  )
+`)
+
+db.run(`
+  CREATE TABLE IF NOT EXISTS emails (
+    id TEXT PRIMARY KEY,
+    account_id TEXT NOT NULL REFERENCES email_accounts(id) ON DELETE CASCADE,
+    message_id TEXT NOT NULL,
+    subject TEXT DEFAULT '',
+    from_name TEXT DEFAULT '',
+    from_address TEXT DEFAULT '',
+    to_address TEXT DEFAULT '',
+    date TEXT DEFAULT '',
+    body_text TEXT DEFAULT '',
+    body_html TEXT DEFAULT '',
+    is_read INTEGER DEFAULT 0,
+    folder TEXT DEFAULT 'INBOX',
+    fetched_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(account_id, message_id)
+  )
+`)
+db.run("CREATE INDEX IF NOT EXISTS idx_emails_account ON emails(account_id)")
+db.run("CREATE INDEX IF NOT EXISTS idx_emails_date ON emails(date DESC)")
+
+export interface EmailAccountRow {
+  id: string
+  name: string
+  email: string
+  password: string
+  imap_host: string
+  imap_port: number
+  use_tls: number
+  active: number
+  last_error: string | null
+  created_at: string
+}
+
+export interface EmailRow {
+  id: string
+  account_id: string
+  message_id: string
+  subject: string
+  from_name: string
+  from_address: string
+  to_address: string
+  date: string
+  body_text: string
+  body_html: string
+  is_read: number
+  folder: string
+  fetched_at: string
+}
+
+export const emailAccounts = {
+  list: () => db.prepare<EmailAccountRow, []>("SELECT * FROM email_accounts ORDER BY created_at DESC").all(),
+  get: (id: string) => db.prepare<EmailAccountRow, [string]>("SELECT * FROM email_accounts WHERE id = ?").get(id) ?? null,
+  create: (data: { name: string; email: string; password: string; imap_host: string; imap_port: number; use_tls: boolean }) => {
+    const id = randomUUID()
+    db.run("INSERT INTO email_accounts (id, name, email, password, imap_host, imap_port, use_tls) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      [id, data.name, data.email, data.password, data.imap_host, data.imap_port, data.use_tls ? 1 : 0])
+    return db.prepare<EmailAccountRow, [string]>("SELECT * FROM email_accounts WHERE id = ?").get(id)!
+  },
+  update: (id: string, data: { name: string; email: string; password: string; imap_host: string; imap_port: number; use_tls: boolean }) => {
+    db.run("UPDATE email_accounts SET name=?, email=?, password=?, imap_host=?, imap_port=?, use_tls=? WHERE id=?",
+      [data.name, data.email, data.password, data.imap_host, data.imap_port, data.use_tls ? 1 : 0, id])
+    return db.prepare<EmailAccountRow, [string]>("SELECT * FROM email_accounts WHERE id = ?").get(id) ?? null
+  },
+  delete: (id: string) => { db.run("DELETE FROM email_accounts WHERE id = ?", [id]) },
+  setError: (id: string, err: string | null) => db.run("UPDATE email_accounts SET last_error = ? WHERE id = ?", [err, id]),
+}
+
+export const emailsDb = {
+  list: (opts: { account_id?: string; limit?: number; offset?: number; unread_only?: boolean }) => {
+    const where: string[] = []
+    const params: (string | number)[] = []
+    if (opts.account_id) { where.push("e.account_id = ?"); params.push(opts.account_id) }
+    if (opts.unread_only) { where.push("e.is_read = 0") }
+    const whereStr = where.length ? `WHERE ${where.join(" AND ")}` : ""
+    const limit = opts.limit ?? 50
+    const offset = opts.offset ?? 0
+    return db.prepare<EmailRow & { account_name: string; account_email: string }, (string | number)[]>(
+      `SELECT e.*, a.name as account_name, a.email as account_email FROM emails e
+       JOIN email_accounts a ON a.id = e.account_id
+       ${whereStr} ORDER BY e.date DESC LIMIT ? OFFSET ?`
+    ).all(...params, limit, offset)
+  },
+  get: (id: string) => db.prepare<EmailRow, [string]>("SELECT * FROM emails WHERE id = ?").get(id) ?? null,
+  markRead: (id: string) => db.run("UPDATE emails SET is_read = 1 WHERE id = ?", [id]),
+  countUnread: () => (db.prepare<{ count: number }, []>("SELECT COUNT(*) as count FROM emails WHERE is_read = 0").get()?.count ?? 0),
+  upsert: (row: Omit<EmailRow, "fetched_at" | "id">) => {
+    db.run(`INSERT OR IGNORE INTO emails (id, account_id, message_id, subject, from_name, from_address, to_address, date, body_text, body_html, folder)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [randomUUID(), row.account_id, row.message_id, row.subject, row.from_name, row.from_address, row.to_address, row.date, row.body_text, row.body_html, row.folder])
+  },
+}
