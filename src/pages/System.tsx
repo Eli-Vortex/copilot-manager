@@ -176,7 +176,7 @@ export default function System() {
             {pwMsg.text}
           </div>
         )}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="space-y-3 max-w-sm">
           <div>
             <label className="block text-xs text-gray-400 mb-1">旧密码</label>
             <input type="password" value={pw.old} onChange={(e) => setPw({ ...pw, old: e.target.value })}

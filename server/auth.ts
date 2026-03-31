@@ -41,14 +41,20 @@ authRoutes.post("/login", async (c) => {
   return c.json({ token, username: user.username })
 })
 
+function getUserFromRequest(c: { req: { header: (name: string) => string | undefined } }): Record<string, unknown> | null {
+  const authHeader = c.req.header("authorization")
+  if (!authHeader?.startsWith("Bearer ")) return null
+  return verifyJwt(authHeader.slice(7))
+}
+
 authRoutes.get("/me", (c) => {
-  const user = c.get("user") as Record<string, unknown> | undefined
+  const user = getUserFromRequest(c)
   if (!user) return c.json({ error: "Unauthorized" }, 401)
   return c.json({ username: user.username })
 })
 
 authRoutes.post("/change-password", async (c) => {
-  const user = c.get("user") as Record<string, unknown> | undefined
+  const user = getUserFromRequest(c)
   if (!user) return c.json({ error: "Unauthorized" }, 401)
 
   const { oldPassword, newPassword } = await c.req.json<{ oldPassword: string; newPassword: string }>()
