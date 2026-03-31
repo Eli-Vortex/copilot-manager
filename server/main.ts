@@ -5,6 +5,7 @@ import { Hono } from "hono"
 import { cors } from "hono/cors"
 
 import { api } from "./routes"
+import { authRoutes, verifyJwt } from "./auth"
 import { groups } from "./db"
 import { startInstance } from "./process-manager"
 
@@ -22,6 +23,22 @@ const MIME: Record<string, string> = {
 }
 
 app.use(cors())
+
+app.route("/api/auth", authRoutes)
+
+app.use("/api/*", async (c, next) => {
+  const authHeader = c.req.header("authorization")
+  if (!authHeader?.startsWith("Bearer ")) {
+    return c.json({ error: "Unauthorized" }, 401)
+  }
+  const payload = verifyJwt(authHeader.slice(7))
+  if (!payload) {
+    return c.json({ error: "Unauthorized" }, 401)
+  }
+  c.set("user", payload)
+  await next()
+})
+
 app.route("/api", api)
 
 if (fs.existsSync(distDir)) {

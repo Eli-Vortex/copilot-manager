@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { RefreshCw, Loader2, GitBranch, ExternalLink, CheckCircle, ArrowUpCircle, Zap } from "lucide-react"
+import { RefreshCw, Loader2, GitBranch, ExternalLink, CheckCircle, ArrowUpCircle, Zap, Lock } from "lucide-react"
 
 import { api } from "../api"
 
@@ -12,6 +12,9 @@ export default function System() {
   const [commits, setCommits] = useState<string[]>([])
   const [log, setLog] = useState<string[]>([])
   const [errorMsg, setErrorMsg] = useState("")
+  const [pw, setPw] = useState({ old: "", new: "", confirm: "" })
+  const [pwMsg, setPwMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const [pwSaving, setPwSaving] = useState(false)
 
   const loadInfo = () => api.system.info().then(setInfo).catch(() => {})
 
@@ -48,6 +51,21 @@ export default function System() {
     } catch (e: unknown) {
       setCheckState("error")
       setErrorMsg(e instanceof Error ? e.message : "更新失败")
+    }
+  }
+
+  const doChangePassword = async () => {
+    if (pw.new !== pw.confirm) { setPwMsg({ ok: false, text: "两次密码不一致" }); return }
+    setPwSaving(true)
+    setPwMsg(null)
+    try {
+      await api.system.changePassword(pw.old, pw.new)
+      setPwMsg({ ok: true, text: "密码修改成功" })
+      setPw({ old: "", new: "", confirm: "" })
+    } catch (e: unknown) {
+      setPwMsg({ ok: false, text: e instanceof Error ? e.message : "修改失败" })
+    } finally {
+      setPwSaving(false)
     }
   }
 
@@ -146,6 +164,39 @@ export default function System() {
             </a>
           </div>
         )}
+      </div>
+
+      <div className="bg-surface-800 border border-gray-800 rounded-xl p-6 space-y-4">
+        <div className="flex items-center gap-3">
+          <Lock className="w-5 h-5 text-gray-400" />
+          <h2 className="text-lg font-semibold">修改密码</h2>
+        </div>
+        {pwMsg && (
+          <div className={`rounded-lg px-3 py-2 text-sm border ${pwMsg.ok ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" : "bg-red-500/10 border-red-500/30 text-red-400"}`}>
+            {pwMsg.text}
+          </div>
+        )}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div>
+            <label className="block text-xs text-gray-400 mb-1">旧密码</label>
+            <input type="password" value={pw.old} onChange={(e) => setPw({ ...pw, old: e.target.value })}
+              className="w-full px-3 py-2 bg-surface-700 border border-gray-700 rounded-lg text-sm text-gray-100 focus:outline-none focus:border-emerald-500/50 transition-colors" />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-400 mb-1">新密码</label>
+            <input type="password" value={pw.new} onChange={(e) => setPw({ ...pw, new: e.target.value })}
+              className="w-full px-3 py-2 bg-surface-700 border border-gray-700 rounded-lg text-sm text-gray-100 focus:outline-none focus:border-emerald-500/50 transition-colors" />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-400 mb-1">确认新密码</label>
+            <input type="password" value={pw.confirm} onChange={(e) => setPw({ ...pw, confirm: e.target.value })}
+              className="w-full px-3 py-2 bg-surface-700 border border-gray-700 rounded-lg text-sm text-gray-100 focus:outline-none focus:border-emerald-500/50 transition-colors" />
+          </div>
+        </div>
+        <button onClick={doChangePassword} disabled={pwSaving || !pw.old || !pw.new || !pw.confirm}
+          className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors">
+          {pwSaving ? "保存中..." : "修改密码"}
+        </button>
       </div>
     </div>
   )

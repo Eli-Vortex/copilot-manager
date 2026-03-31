@@ -1,10 +1,26 @@
 const BASE = "/api"
 
+export function getToken(): string | null {
+  return localStorage.getItem("token")
+}
+
+export function clearToken(): void {
+  localStorage.removeItem("token")
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
-    ...options,
-  })
+  const token = getToken()
+  const headers: Record<string, string> = { "Content-Type": "application/json" }
+  if (token) headers["Authorization"] = `Bearer ${token}`
+
+  const res = await fetch(`${BASE}${path}`, { headers, ...options })
+
+  if (res.status === 401 && !path.startsWith("/auth/")) {
+    clearToken()
+    window.location.href = "/login"
+    throw new Error("Unauthorized")
+  }
+
   const data = await res.json()
   if (!res.ok) throw new Error(data.error || `Request failed: ${res.status}`)
   return data as T
@@ -126,5 +142,7 @@ export const api = {
     checkUpdate: () => request<{ behind: number; commits: string[] }>("/system/check-update", { method: "POST" }),
     update: () => request<{ ok: boolean; error?: string; log: string[] }>("/system/update", { method: "POST" }),
     updateLog: () => request<{ log: string[]; running: boolean }>("/system/update-log"),
+    changePassword: (oldPassword: string, newPassword: string) =>
+      request<{ ok: boolean }>("/auth/change-password", { method: "POST", body: JSON.stringify({ oldPassword, newPassword }) }),
   },
 }

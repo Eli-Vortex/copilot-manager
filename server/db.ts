@@ -1,5 +1,5 @@
 import { Database } from "bun:sqlite"
-import { randomUUID } from "node:crypto"
+import { randomUUID, randomBytes, createHash } from "node:crypto"
 import fs from "node:fs"
 import path from "node:path"
 
@@ -37,6 +37,61 @@ db.run(`
     updated_at TEXT DEFAULT (datetime('now'))
   )
 `)
+
+db.run(`
+  CREATE TABLE IF NOT EXISTS admin (
+    id TEXT PRIMARY KEY,
+    username TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now'))
+  )
+`)
+
+db.run(`
+  CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  )
+`)
+
+function hashPassword(password: string): string {
+  const salt = randomBytes(16).toString("hex")
+  const hash = createHash("sha256").update(salt + password).digest("hex")
+  return `${salt}:${hash}`
+}
+
+function verifyPassword(password: string, stored: string): boolean {
+  const [salt, hash] = stored.split(":")
+  return createHash("sha256").update(salt + password).digest("hex") === hash
+}
+
+function getJwtSecret(): string {
+  const row = db.prepare<{ value: string }, []>("SELECT value FROM settings WHERE key = 'jwt_secret'").get()
+  if (row) return row.value
+  const secret = randomBytes(32).toString("hex")
+  db.run("INSERT INTO settings (key, value) VALUES ('jwt_secret', ?)", [secret])
+  return secret
+}
+
+function initAdmin(): string | null {
+  const existing = db.prepare<{ id: string }, []>("SELECT id FROM admin LIMIT 1").get()
+  if (existing) return null
+  const password = randomBytes(8).toString("hex")
+  const id = randomUUID()
+  db.run("INSERT INTO admin (id, username, password_hash) VALUES (?, ?, ?)", [id, "admin", hashPassword(password)])
+  return password
+}
+
+const JWT_SECRET = getJwtSecret()
+const INIT_PASSWORD = initAdmin()
+if (INIT_PASSWORD) {
+  console.log(`\n  ╔════════════════════════════════════════╗`)
+  console.log(`  ║  Admin initial password: ${INIT_PASSWORD}  ║`)
+  console.log(`  ║  Username: admin                       ║`)
+  console.log(`  ╚════════════════════════════════════════╝\n`)
+}
+
+export { db, hashPassword, verifyPassword, JWT_SECRET }
 
 export interface GroupRow {
   id: string
