@@ -1,11 +1,88 @@
 @import "tailwindcss";
 
 @theme {
-  --color-surface-950: #060a13;
-  --color-surface-900: #0a0f1a;
-  --color-surface-800: #111827;
-  --color-surface-700: #1a2233;
-  --color-surface-600: #243044;
+  --color-surface-950: var(--s-950);
+  --color-surface-900: var(--s-900);
+  --color-surface-800: var(--s-800);
+  --color-surface-700: var(--s-700);
+  --color-surface-600: var(--s-600);
+}
+
+:root,
+[data-theme="dark"] {
+  --s-950: #060a13;
+  --s-900: #0a0f1a;
+  --s-800: #111827;
+  --s-700: #1a2233;
+  --s-600: #243044;
+  --text-primary: #f9fafb;
+  --text-secondary: #9ca3af;
+  --text-muted: #6b7280;
+  --border-color: #1f2937;
+  color-scheme: dark;
+}
+
+[data-theme="light"] {
+  --s-950: #f8fafc;
+  --s-900: #f1f5f9;
+  --s-800: #ffffff;
+  --s-700: #f1f5f9;
+  --s-600: #e2e8f0;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #94a3b8;
+  --border-color: #e2e8f0;
+  color-scheme: light;
+}
+
+[data-theme="light"] {
+  color: #0f172a;
+}
+
+[data-theme="light"] .bg-surface-950,
+[data-theme="light"] .bg-surface-900,
+[data-theme="light"] .bg-surface-800 {
+  border-color: #e2e8f0;
+}
+
+[data-theme="light"] .border-gray-800 {
+  border-color: #e2e8f0;
+}
+
+[data-theme="light"] .border-gray-700 {
+  border-color: #cbd5e1;
+}
+
+[data-theme="light"] .text-gray-100,
+[data-theme="light"] .text-white {
+  color: #0f172a;
+}
+
+[data-theme="light"] .text-gray-200,
+[data-theme="light"] .text-gray-300 {
+  color: #1e293b;
+}
+
+[data-theme="light"] .text-gray-400 {
+  color: #64748b;
+}
+
+[data-theme="light"] .text-gray-500 {
+  color: #94a3b8;
+}
+
+[data-theme="light"] .text-gray-600 {
+  color: #94a3b8;
+}
+
+[data-theme="light"] .placeholder-gray-500::placeholder {
+  color: #94a3b8;
+}
+
+[data-theme="light"] input,
+[data-theme="light"] select,
+[data-theme="light"] textarea {
+  color-scheme: light;
 }
 
 * {
@@ -13,10 +90,17 @@
   scrollbar-color: #374151 transparent;
 }
 
+[data-theme="light"] * {
+  scrollbar-color: #cbd5e1 transparent;
+}
+
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #374151; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #4b5563; }
+
+[data-theme="light"] ::-webkit-scrollbar-thumb { background: #cbd5e1; }
+[data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 
 input, select, textarea {
   color-scheme: dark;

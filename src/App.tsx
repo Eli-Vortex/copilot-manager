@@ -1,5 +1,6 @@
+import { useState, useEffect } from "react"
 import { BrowserRouter, Routes, Route, NavLink, Navigate, useNavigate } from "react-router-dom"
-import { LayoutDashboard, FolderCog, Users, Zap, Settings, LogOut } from "lucide-react"
+import { LayoutDashboard, FolderCog, Users, Zap, Settings, LogOut, Sun, Moon } from "lucide-react"
 
 import Dashboard from "./pages/Dashboard"
 import Groups from "./pages/Groups"
@@ -22,6 +23,15 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 
 function AppLayout() {
   const navigate = useNavigate()
+  const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "dark")
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme)
+    localStorage.setItem("theme", theme)
+  }, [theme])
+
+  const toggleTheme = () => setTheme((t) => t === "dark" ? "light" : "dark")
+
   const handleLogout = () => {
     clearToken()
     navigate("/login", { replace: true })
@@ -53,7 +63,12 @@ function AppLayout() {
             </NavLink>
           ))}
         </nav>
-        <div className="px-3 pb-3">
+        <div className="px-3 pb-1 space-y-1">
+          <button onClick={toggleTheme}
+            className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-400 hover:text-amber-400 hover:bg-amber-500/10 transition-colors w-full">
+            {theme === "dark" ? <Sun className="w-[18px] h-[18px]" /> : <Moon className="w-[18px] h-[18px]" />}
+            {theme === "dark" ? "浅色模式" : "深色模式"}
+          </button>
           <button onClick={handleLogout}
             className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-colors w-full">
             <LogOut className="w-[18px] h-[18px]" />
