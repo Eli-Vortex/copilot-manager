@@ -398,9 +398,19 @@ export const emailsDb = {
   markRead: (id: string) => db.run("UPDATE emails SET is_read = 1 WHERE id = ?", [id]),
   countUnread: () => (db.prepare<{ count: number }, []>("SELECT COUNT(*) as count FROM emails WHERE is_read = 0").get()?.count ?? 0),
   upsert: (row: Omit<EmailRow, "fetched_at" | "id">) => {
-    db.run(`INSERT OR REPLACE INTO emails (id, account_id, message_id, subject, from_name, from_address, to_address, date, body_text, body_html, folder, uid)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [randomUUID(), row.account_id, row.message_id, row.subject, row.from_name, row.from_address, row.to_address, row.date, row.body_text, row.body_html, row.folder, row.uid ?? null])
+    db.run(`INSERT INTO emails (id, account_id, message_id, subject, from_name, from_address, to_address, date, body_text, body_html, is_read, folder, uid)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(account_id, message_id) DO UPDATE SET
+              subject = excluded.subject,
+              from_name = excluded.from_name,
+              from_address = excluded.from_address,
+              to_address = excluded.to_address,
+              date = excluded.date,
+              body_text = CASE WHEN excluded.body_text != '' THEN excluded.body_text ELSE emails.body_text END,
+              body_html = CASE WHEN excluded.body_html != '' THEN excluded.body_html ELSE emails.body_html END,
+              folder = excluded.folder,
+              uid = excluded.uid`,
+      [randomUUID(), row.account_id, row.message_id, row.subject, row.from_name, row.from_address, row.to_address, row.date, row.body_text, row.body_html, row.is_read, row.folder, row.uid ?? null])
   },
   updateBody: (id: string, text: string, html: string) => {
     db.run("UPDATE emails SET body_text = ?, body_html = ? WHERE id = ?", [text, html, id])

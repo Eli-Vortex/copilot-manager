@@ -38,8 +38,14 @@ export async function fetchAndStoreEmails(
     let newCount = 0
 
     try {
-      const uids = await client.search({ all: true }, { uid: true })
-      if (uids.length === 0) return 0
+      const since = new Date()
+      since.setDate(since.getDate() - 30)
+
+      const uids = await client.search({ since }, { uid: true })
+      if (uids.length === 0) {
+        emailsDb.clearAccount(account.id)
+        return 0
+      }
 
       const recentUids = uids.slice(-limit)
       const uidRange = recentUids.join(",")
@@ -56,11 +62,18 @@ export async function fetchAndStoreEmails(
 
       for await (const msg of client.fetch(uidRange, {
         envelope: true,
+        internalDate: true,
         uid: true,
       })) {
         if (!msg.envelope) continue
 
         const envelope = msg.envelope
+        const isoDate = envelope.date ?
+          new Date(envelope.date).toISOString()
+          : msg.internalDate ?
+            new Date(msg.internalDate).toISOString()
+            : ""
+
         fetched.push({
           uid: msg.uid,
           messageId: envelope.messageId ?? `${account.id}-${msg.uid}`,
@@ -68,7 +81,7 @@ export async function fetchAndStoreEmails(
           fromName: envelope.from?.[0]?.name || "",
           fromAddress: envelope.from?.[0]?.address || "",
           toAddress: envelope.to?.[0]?.address ?? "",
-          date: envelope.date ? new Date(envelope.date).toISOString() : new Date().toISOString(),
+          date: isoDate,
         })
       }
 
