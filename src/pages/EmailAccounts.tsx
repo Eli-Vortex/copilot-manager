@@ -16,6 +16,7 @@ interface FormData {
   name: string
   email: string
   password: string
+  note: string
   imap_host: string
   imap_port: number
   use_tls: boolean
@@ -26,6 +27,7 @@ const emptyForm: FormData = {
   name: "",
   email: "",
   password: "",
+  note: "",
   imap_host: "imap.qq.com",
   imap_port: 993,
   use_tls: true,
@@ -42,6 +44,7 @@ export default function EmailAccounts() {
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ ok: boolean; error?: string } | null>(null)
+  const [notePreview, setNotePreview] = useState<string | null>(null)
 
   const load = useCallback(() => {
     api.emailAccounts.list()
@@ -70,6 +73,7 @@ export default function EmailAccounts() {
       name: a.name,
       email: a.email,
       password: "",
+      note: a.note || "",
       imap_host: a.imap_host,
       imap_port: a.imap_port,
       use_tls: Boolean(a.use_tls),
@@ -98,6 +102,7 @@ export default function EmailAccounts() {
       const result = await api.emailAccounts.test({
         email: form.email,
         password: form.password,
+        note: form.note,
         imap_host: form.imap_host,
         imap_port: form.imap_port,
         use_tls: form.use_tls,
@@ -170,6 +175,7 @@ export default function EmailAccounts() {
             <tr className="border-b border-gray-800">
               <th className="text-left px-5 py-3.5 text-gray-400 font-medium">名称</th>
               <th className="text-left px-5 py-3.5 text-gray-400 font-medium">邮箱</th>
+              <th className="text-left px-5 py-3.5 text-gray-400 font-medium">备注</th>
               <th className="text-left px-5 py-3.5 text-gray-400 font-medium">IMAP服务器:端口</th>
               <th className="text-left px-5 py-3.5 text-gray-400 font-medium">状态</th>
               <th className="text-right px-5 py-3.5 text-gray-400 font-medium">操作</th>
@@ -177,12 +183,19 @@ export default function EmailAccounts() {
           </thead>
           <tbody>
             {accounts.length === 0 ? (
-              <tr><td colSpan={5} className="px-5 py-12 text-center text-gray-500">暂无邮箱账号，点击「添加邮箱」开始配置</td></tr>
+              <tr><td colSpan={6} className="px-5 py-12 text-center text-gray-500">暂无邮箱账号，点击「添加邮箱」开始配置</td></tr>
             ) : (
               accounts.map((a) => (
                 <tr key={a.id} className="border-b border-gray-800/50 hover:bg-surface-700/30 transition-colors">
                   <td className="px-5 py-3.5 font-medium">{a.name}</td>
                   <td className="px-5 py-3.5 text-gray-300">{a.email}</td>
+                  <td className="px-5 py-3.5 text-gray-400">
+                    {a.note ? (
+                      <button onClick={() => setNotePreview(a.note)} className="max-w-[220px] truncate text-left hover:text-emerald-400 transition-colors">
+                        {a.note}
+                      </button>
+                    ) : <span className="text-gray-600">-</span>}
+                  </td>
                   <td className="px-5 py-3.5 text-gray-400 font-mono text-xs">{a.imap_host}:{a.imap_port}</td>
                   <td className="px-5 py-3.5">
                     {a.last_error ? (
@@ -244,6 +257,17 @@ export default function EmailAccounts() {
                   value={form.email}
                   onChange={(e) => setForm({ ...form, email: e.target.value })}
                   placeholder="example@qq.com"
+                  className="w-full px-3 py-2 bg-surface-700 border border-gray-700 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/30 transition-colors"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-1.5">备注</label>
+                <textarea
+                  value={form.note}
+                  onChange={(e) => setForm({ ...form, note: e.target.value })}
+                  placeholder="可填写用途、来源或说明"
+                  rows={3}
                   className="w-full px-3 py-2 bg-surface-700 border border-gray-700 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/30 transition-colors"
                 />
               </div>
@@ -341,6 +365,18 @@ export default function EmailAccounts() {
                 {saving ? "保存中..." : "保存"}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {notePreview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setNotePreview(null)}>
+          <div className="bg-surface-800 border border-gray-700 rounded-xl shadow-2xl p-6 w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="text-lg font-semibold">完整备注</h3>
+              <button onClick={() => setNotePreview(null)} className="p-1 text-gray-500 hover:text-gray-300 transition-colors"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="whitespace-pre-wrap text-sm text-gray-300 leading-6">{notePreview}</div>
           </div>
         </div>
       )}

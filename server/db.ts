@@ -274,10 +274,12 @@ db.run(`
     imap_port INTEGER DEFAULT 993,
     use_tls INTEGER DEFAULT 1,
     active INTEGER DEFAULT 1,
+    note TEXT DEFAULT '',
     last_error TEXT DEFAULT NULL,
     created_at TEXT DEFAULT (datetime('now'))
   )
 `)
+try { db.run("ALTER TABLE email_accounts ADD COLUMN note TEXT DEFAULT ''") } catch { void 0 }
 
 db.run(`
   CREATE TABLE IF NOT EXISTS emails (
@@ -327,6 +329,7 @@ export interface EmailAccountRow {
   imap_port: number
   use_tls: number
   active: number
+  note: string
   last_error: string | null
   created_at: string
 }
@@ -364,15 +367,17 @@ export interface AccountSubmissionRow {
 export const emailAccounts = {
   list: () => db.prepare<EmailAccountRow, []>("SELECT * FROM email_accounts ORDER BY created_at DESC").all(),
   get: (id: string) => db.prepare<EmailAccountRow, [string]>("SELECT * FROM email_accounts WHERE id = ?").get(id) ?? null,
-  create: (data: { name: string; email: string; password: string; imap_host: string; imap_port: number; use_tls: boolean }) => {
+  create: (data: { name: string; email: string; password: string; imap_host: string; imap_port: number; use_tls: boolean; note?: string }) => {
     const id = randomUUID()
-    db.run("INSERT INTO email_accounts (id, name, email, password, imap_host, imap_port, use_tls) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      [id, data.name, data.email, data.password, data.imap_host, data.imap_port, data.use_tls ? 1 : 0])
+    db.run("INSERT INTO email_accounts (id, name, email, password, imap_host, imap_port, use_tls, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      [id, data.name, data.email, data.password, data.imap_host, data.imap_port, data.use_tls ? 1 : 0, data.note || ""])
     return db.prepare<EmailAccountRow, [string]>("SELECT * FROM email_accounts WHERE id = ?").get(id)!
   },
-  update: (id: string, data: { name: string; email: string; password: string; imap_host: string; imap_port: number; use_tls: boolean }) => {
-    db.run("UPDATE email_accounts SET name=?, email=?, password=?, imap_host=?, imap_port=?, use_tls=? WHERE id=?",
-      [data.name, data.email, data.password, data.imap_host, data.imap_port, data.use_tls ? 1 : 0, id])
+  update: (id: string, data: { name: string; email: string; password?: string; imap_host: string; imap_port: number; use_tls: boolean; note?: string }) => {
+    const current = db.prepare<EmailAccountRow, [string]>("SELECT * FROM email_accounts WHERE id = ?").get(id)
+    if (!current) return null
+    db.run("UPDATE email_accounts SET name=?, email=?, password=?, imap_host=?, imap_port=?, use_tls=?, note=? WHERE id=?",
+      [data.name, data.email, data.password?.trim() ? data.password : current.password, data.imap_host, data.imap_port, data.use_tls ? 1 : 0, data.note || "", id])
     return db.prepare<EmailAccountRow, [string]>("SELECT * FROM email_accounts WHERE id = ?").get(id) ?? null
   },
   delete: (id: string) => { db.run("DELETE FROM email_accounts WHERE id = ?", [id]) },

@@ -10,7 +10,7 @@ emailRoutes.get("/email-accounts", (c) => {
 
 emailRoutes.post("/email-accounts", async (c) => {
   const body = await c.req.json()
-  const { name, email, password, imap_host, imap_port, use_tls } = body
+  const { name, email, password, imap_host, imap_port, use_tls, note } = body
 
   if (!name || !email || !password || !imap_host) {
     return c.json({ error: "name, email, password, and imap_host are required" }, 400)
@@ -23,6 +23,7 @@ emailRoutes.post("/email-accounts", async (c) => {
     imap_host,
     imap_port: imap_port ?? 993,
     use_tls: use_tls ?? true,
+    note,
   })
 
   return c.json(account, 201)
@@ -52,10 +53,10 @@ emailRoutes.post("/email-accounts/test", async (c) => {
 emailRoutes.put("/email-accounts/:id", async (c) => {
   const id = c.req.param("id")
   const body = await c.req.json()
-  const { name, email, password, imap_host, imap_port, use_tls } = body
+  const { name, email, password, imap_host, imap_port, use_tls, note } = body
 
-  if (!name || !email || !password || !imap_host) {
-    return c.json({ error: "name, email, password, and imap_host are required" }, 400)
+  if (!name || !email || !imap_host) {
+    return c.json({ error: "name, email, and imap_host are required" }, 400)
   }
 
   const updated = emailAccounts.update(id, {
@@ -65,6 +66,7 @@ emailRoutes.put("/email-accounts/:id", async (c) => {
     imap_host,
     imap_port: imap_port ?? 993,
     use_tls: use_tls ?? true,
+    note,
   })
 
   if (!updated) return c.json({ error: "Account not found" }, 404)

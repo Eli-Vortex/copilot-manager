@@ -103,7 +103,7 @@ export interface CopilotStatusResponse {
 
 export interface EmailAccountInfo {
   id: string; name: string; email: string; imap_host: string; imap_port: number
-  use_tls: number; active: number; last_error: string | null; created_at: string
+  use_tls: number; active: number; note: string; last_error: string | null; created_at: string
 }
 export interface EmailInfo {
   id: string; account_id: string; message_id: string; subject: string
@@ -190,11 +190,11 @@ export const api = {
 
   emailAccounts: {
     list: () => request<EmailAccountInfo[]>("/email-accounts"),
-    create: (data: { name: string; email: string; password: string; imap_host: string; imap_port: number; use_tls: boolean }) =>
+    create: (data: { name: string; email: string; password: string; imap_host: string; imap_port: number; use_tls: boolean; note?: string }) =>
       request<EmailAccountInfo>("/email-accounts", { method: "POST", body: JSON.stringify(data) }),
     test: (data: { email: string; password: string; imap_host: string; imap_port: number; use_tls: boolean }) =>
       request<{ ok: boolean; error?: string }>("/email-accounts/test", { method: "POST", body: JSON.stringify(data) }),
-    update: (id: string, data: { name: string; email: string; password: string; imap_host: string; imap_port: number; use_tls: boolean }) =>
+    update: (id: string, data: { name: string; email: string; password?: string; imap_host: string; imap_port: number; use_tls: boolean; note?: string }) =>
       request<EmailAccountInfo>(`/email-accounts/${id}`, { method: "PUT", body: JSON.stringify(data) }),
     delete: (id: string) => request(`/email-accounts/${id}`, { method: "DELETE" }),
   },
