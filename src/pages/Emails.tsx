@@ -47,9 +47,14 @@ export default function Emails() {
       .catch(() => setLoading(false))
   }, [loadEmails, filterAccountId])
 
+  useEffect(() => { load() }, [load])
+
+  const hasFetchedOnce = useRef(false)
   useEffect(() => {
-    api.emails.fetchAll().catch(() => undefined).finally(() => load())
-  }, [load])
+    if (hasFetchedOnce.current) return
+    hasFetchedOnce.current = true
+    api.emails.fetchAll().catch(() => undefined)
+  }, [])
 
   const filterRef = useRef(filterAccountId)
   filterRef.current = filterAccountId

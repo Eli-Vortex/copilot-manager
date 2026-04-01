@@ -122,6 +122,7 @@ export default function EmailAccounts() {
         name: form.name,
         email: form.email,
         password: form.password,
+        note: form.note,
         imap_host: form.imap_host,
         imap_port: form.imap_port,
         use_tls: form.use_tls,
