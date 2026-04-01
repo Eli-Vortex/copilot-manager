@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react"
 import { BrowserRouter, Routes, Route, NavLink, Navigate, useNavigate } from "react-router-dom"
-import { LayoutDashboard, FolderCog, Users, Zap, Settings, LogOut, Sun, Moon, MailOpen, Mail } from "lucide-react"
+import { LayoutDashboard, FolderCog, Users, Zap, Settings, LogOut, Sun, Moon, MailOpen, Mail, Upload } from "lucide-react"
 
 import Dashboard from "./pages/Dashboard"
 import Groups from "./pages/Groups"
@@ -9,6 +9,8 @@ import System from "./pages/System"
 import Login from "./pages/Login"
 import EmailAccounts from "./pages/EmailAccounts"
 import Emails from "./pages/Emails"
+import AccountUploads from "./pages/AccountUploads"
+import AccountUploads from "./pages/AccountUploads"
 import { getToken, clearToken, api } from "./api"
 
 function getRoleFromToken(): string {
@@ -26,6 +28,7 @@ function getRoleFromToken(): string {
 
 const allNavItems = [
   { to: "/", icon: LayoutDashboard, label: "仪表盘", badge: false, adminOnly: false },
+  { to: "/account-uploads", icon: Upload, label: "账号上传", badge: false, adminOnly: false, userOnly: true },
   { to: "/groups", icon: FolderCog, label: "分组管理", badge: false, adminOnly: true },
   { to: "/accounts", icon: Users, label: "账号管理", badge: false, adminOnly: true },
   { to: "/email-accounts", icon: MailOpen, label: "邮箱管理", badge: false, adminOnly: true },
@@ -44,7 +47,7 @@ function AppLayout() {
   const [unreadCount, setUnreadCount] = useState(0)
   const [role] = useState(() => getRoleFromToken())
 
-  const navItems = allNavItems.filter((item) => !item.adminOnly || role === "admin")
+  const navItems = allNavItems.filter((item) => (!item.adminOnly || role === "admin") && (!item.userOnly || role !== "admin"))
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme)
@@ -119,7 +122,9 @@ function AppLayout() {
       <main className="flex-1 overflow-y-auto bg-surface-900">
         <Routes>
           <Route path="/" element={<Dashboard />} />
+          <Route path="/account-uploads" element={<AccountUploads />} />
           <Route path="/groups" element={<Groups />} />
+          <Route path="/account-uploads" element={<AccountUploads />} />
           <Route path="/accounts" element={<Accounts />} />
           <Route path="/email-accounts" element={<EmailAccounts />} />
           <Route path="/emails" element={<Emails />} />
