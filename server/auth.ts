@@ -1,5 +1,6 @@
 import { Hono } from "hono"
-import { createHash, randomBytes } from "node:crypto"
+import { createHash, randomBytes, randomUUID } from "node:crypto"
+import type { Context, Next } from "hono"
 
 import { db, hashPassword, verifyPassword, JWT_SECRET } from "./db"
 
@@ -25,32 +26,63 @@ export function verifyJwt(token: string): Record<string, unknown> | null {
   }
 }
 
+export function getUserFromRequest(c: { req: { header: (name: string) => string | undefined } }): { sub: string; username: string; role: string } | null {
+  const authHeader = c.req.header("authorization")
+  if (!authHeader?.startsWith("Bearer ")) return null
+  const payload = verifyJwt(authHeader.slice(7))
+  if (!payload) return null
+  return {
+    sub: payload.sub as string,
+    username: payload.username as string,
+    role: (payload.role as string) || "admin",
+  }
+}
+
+export async function requireAdmin(c: Context<{ Variables: { user: Record<string, unknown> } }>, next: Next): Promise<Response | void> {
+  const user = c.get("user")
+  if (!user || user.role !== "admin") {
+    return c.json({ error: "Forbidden: admin only" }, 403)
+  }
+  await next()
+}
+
 authRoutes.post("/login", async (c) => {
   const { username, password } = await c.req.json<{ username: string; password: string }>()
   if (!username || !password) return c.json({ error: "用户名和密码不能为空" }, 400)
 
-  const user = db.prepare<{ id: string; username: string; password_hash: string }, [string]>(
-    "SELECT id, username, password_hash FROM admin WHERE username = ?"
+  const user = db.prepare<{ id: string; username: string; password_hash: string; role: string }, [string]>(
+    "SELECT id, username, password_hash, role FROM admin WHERE username = ?"
   ).get(username)
 
   if (!user || !verifyPassword(password, user.password_hash)) {
     return c.json({ error: "用户名或密码错误" }, 401)
   }
 
-  const token = signJwt({ sub: user.id, username: user.username })
-  return c.json({ token, username: user.username })
+  const role = user.role || "admin"
+  const token = signJwt({ sub: user.id, username: user.username, role })
+  return c.json({ token, username: user.username, role })
 })
 
-function getUserFromRequest(c: { req: { header: (name: string) => string | undefined } }): Record<string, unknown> | null {
-  const authHeader = c.req.header("authorization")
-  if (!authHeader?.startsWith("Bearer ")) return null
-  return verifyJwt(authHeader.slice(7))
-}
+authRoutes.post("/register", async (c) => {
+  const { username, password } = await c.req.json<{ username: string; password: string }>()
+  if (!username || !password) return c.json({ error: "用户名和密码不能为空" }, 400)
+  if (password.length < 6) return c.json({ error: "密码至少 6 位" }, 400)
+
+  const existing = db.prepare<{ id: string }, [string]>("SELECT id FROM admin WHERE username = ?").get(username)
+  if (existing) return c.json({ error: "用户名已存在" }, 409)
+
+  const id = randomUUID()
+  db.run("INSERT INTO admin (id, username, password_hash, role) VALUES (?, ?, ?, 'user')",
+    [id, username, hashPassword(password)])
+
+  const token = signJwt({ sub: id, username, role: "user" })
+  return c.json({ token, username, role: "user" })
+})
 
 authRoutes.get("/me", (c) => {
   const user = getUserFromRequest(c)
   if (!user) return c.json({ error: "Unauthorized" }, 401)
-  return c.json({ username: user.username })
+  return c.json({ username: user.username, role: user.role })
 })
 
 authRoutes.post("/change-password", async (c) => {
@@ -63,12 +95,12 @@ authRoutes.post("/change-password", async (c) => {
 
   const admin = db.prepare<{ password_hash: string }, [string]>(
     "SELECT password_hash FROM admin WHERE id = ?"
-  ).get(user.sub as string)
+  ).get(user.sub)
 
   if (!admin || !verifyPassword(oldPassword, admin.password_hash)) {
     return c.json({ error: "旧密码错误" }, 401)
   }
 
-  db.run("UPDATE admin SET password_hash = ? WHERE id = ?", [hashPassword(newPassword), user.sub as string])
+  db.run("UPDATE admin SET password_hash = ? WHERE id = ?", [hashPassword(newPassword), user.sub])
   return c.json({ ok: true })
 })

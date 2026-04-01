@@ -1,6 +1,6 @@
 import { Hono } from "hono"
 import { emailAccounts, emailsDb } from "./db"
-import { testConnection, fetchAndStoreEmails, fetchAllAccounts } from "./email-service"
+import { testConnection, fetchAndStoreEmails, fetchAllAccounts, fetchEmailBody } from "./email-service"
 
 export const emailRoutes = new Hono()
 
@@ -92,10 +92,27 @@ emailRoutes.get("/emails/unread-count", (c) => {
   return c.json({ count })
 })
 
-emailRoutes.get("/emails/:id", (c) => {
+emailRoutes.post("/emails/clear", (c) => {
+  emailsDb.clearAll()
+  return c.json({ ok: true })
+})
+
+emailRoutes.get("/emails/:id", async (c) => {
   const id = c.req.param("id")
   const email = emailsDb.get(id)
   if (!email) return c.json({ error: "Email not found" }, 404)
+
+  if (!email.body_text && !email.body_html && email.uid != null) {
+    const account = emailAccounts.get(email.account_id)
+    if (account) {
+      await fetchEmailBody(account, email.uid, email.id, email.folder)
+      const updated = emailsDb.get(id)
+      if (updated) {
+        emailsDb.markRead(id)
+        return c.json({ ...updated, is_read: 1 })
+      }
+    }
+  }
 
   emailsDb.markRead(id)
   return c.json({ ...email, is_read: 1 })

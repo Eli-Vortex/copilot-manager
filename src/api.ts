@@ -118,6 +118,8 @@ export const api = {
   auth: {
     deviceCode: () => request<DeviceCodeResponse>("/auth/device-code", { method: "POST" }),
     poll: (device_code: string) => request<PollResponse>("/auth/poll", { method: "POST", body: JSON.stringify({ device_code }) }),
+    register: (username: string, password: string) =>
+      request<{ token: string; username: string; role: string }>("/auth/register", { method: "POST", body: JSON.stringify({ username, password }) }),
   },
 
   groups: {
@@ -180,5 +182,6 @@ export const api = {
     unreadCount: () => request<{ count: number }>("/emails/unread-count"),
     fetchAll: () => request<Array<{ accountId: string; name: string; newCount: number; error?: string }>>("/emails/fetch", { method: "POST" }),
     fetchOne: (accountId: string) => request<{ accountId: string; name: string; newCount: number }>(`/emails/fetch/${accountId}`, { method: "POST" }),
+    clear: () => request<{ ok: boolean }>("/emails/clear", { method: "POST" }),
   },
 }

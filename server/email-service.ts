@@ -22,7 +22,7 @@ export async function testConnection(account: EmailAccountRow): Promise<{ ok: bo
 export async function fetchAndStoreEmails(
   account: EmailAccountRow,
   folder = "INBOX",
-  limit = 30
+  limit = 15
 ): Promise<number> {
   const client = new ImapFlow({
     host: account.imap_host,
@@ -48,39 +48,27 @@ export async function fetchAndStoreEmails(
       const seqRange = `${rangeStart}:${total}`
 
       const fetched: Array<{
+        uid: number
         messageId: string
         subject: string
         fromName: string
         fromAddress: string
         toAddress: string
         date: string
-        text: string
-        html: string
       }> = []
 
-      for await (const msg of client.fetch(seqRange, {
-        envelope: true,
-        source: true,
-      })) {
-        if (!msg.envelope || !msg.source) continue
+      for await (const msg of client.fetch(seqRange, { envelope: true })) {
+        if (!msg.envelope) continue
 
         const envelope = msg.envelope
-        const parsed = await simpleParser(msg.source)
-        const text = parsed.text || ""
-        const html = parsed.html || ""
-        const subject = parsed.subject || envelope.subject || "(no subject)"
-        const fromName = parsed.from?.value?.[0]?.name || envelope.from?.[0]?.name || ""
-        const fromAddress = parsed.from?.value?.[0]?.address || envelope.from?.[0]?.address || ""
-
         fetched.push({
+          uid: msg.uid,
           messageId: envelope.messageId ?? `${account.id}-${msg.seq}`,
-          subject,
-          fromName,
-          fromAddress,
+          subject: envelope.subject || "(no subject)",
+          fromName: envelope.from?.[0]?.name || "",
+          fromAddress: envelope.from?.[0]?.address || "",
           toAddress: envelope.to?.[0]?.address ?? "",
           date: envelope.date ? new Date(envelope.date).toISOString() : new Date().toISOString(),
-          text,
-          html,
         })
       }
 
@@ -93,10 +81,11 @@ export async function fetchAndStoreEmails(
           from_address: m.fromAddress,
           to_address: m.toAddress,
           date: m.date,
-          body_text: m.text,
-          body_html: m.html,
+          body_text: "",
+          body_html: "",
           is_read: 0,
           folder,
+          uid: m.uid,
         })
         newCount++
       }
@@ -110,6 +99,40 @@ export async function fetchAndStoreEmails(
     const errMsg = err instanceof Error ? err.message : String(err)
     emailAccounts.setError(account.id, errMsg)
     throw err
+  } finally {
+    await client.logout().catch(() => undefined)
+  }
+}
+
+export async function fetchEmailBody(
+  account: EmailAccountRow,
+  uid: number,
+  emailId: string,
+  folder = "INBOX"
+): Promise<void> {
+  const client = new ImapFlow({
+    host: account.imap_host,
+    port: account.imap_port,
+    secure: Boolean(account.use_tls),
+    auth: { user: account.email, pass: account.password },
+    logger: false,
+  })
+
+  try {
+    await client.connect()
+    const lock = await client.getMailboxLock(folder)
+    try {
+      const msg = await client.fetchOne(String(uid), { source: true }, { uid: true })
+      if (msg && msg.source) {
+        const parsed = await simpleParser(msg.source)
+        emailsDb.updateBody(emailId, parsed.text || "", parsed.html || "")
+      }
+    } finally {
+      lock.release()
+    }
+    emailAccounts.setError(account.id, null)
+  } catch (err) {
+    emailAccounts.setError(account.id, err instanceof Error ? err.message : String(err))
   } finally {
     await client.logout().catch(() => undefined)
   }

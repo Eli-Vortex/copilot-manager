@@ -5,12 +5,14 @@ import { Hono } from "hono"
 import { cors } from "hono/cors"
 
 import { api } from "./routes"
-import { authRoutes, verifyJwt } from "./auth"
+import { authRoutes, verifyJwt, requireAdmin } from "./auth"
 import { groups } from "./db"
 import { startInstance } from "./process-manager"
 import { emailRoutes } from "./email-routes"
 
-const app = new Hono()
+type AppEnv = { Variables: { user: Record<string, unknown> } }
+
+const app = new Hono<AppEnv>()
 const distDir = path.resolve(import.meta.dir, "..", "dist")
 
 const MIME: Record<string, string> = {
@@ -39,6 +41,13 @@ app.use("/api/*", async (c, next) => {
   c.set("user", payload)
   await next()
 })
+
+app.use("/api/emails*", requireAdmin)
+app.use("/api/email-accounts*", requireAdmin)
+app.use("/api/system/*", requireAdmin)
+app.use("/api/groups*", requireAdmin)
+app.use("/api/accounts*", requireAdmin)
+app.use("/api/copilot*", requireAdmin)
 
 app.route("/api", api)
 app.route("/api", emailRoutes)

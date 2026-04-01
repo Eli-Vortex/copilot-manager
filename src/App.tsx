@@ -11,13 +11,26 @@ import EmailAccounts from "./pages/EmailAccounts"
 import Emails from "./pages/Emails"
 import { getToken, clearToken, api } from "./api"
 
-const navItems = [
-  { to: "/", icon: LayoutDashboard, label: "仪表盘", badge: false },
-  { to: "/groups", icon: FolderCog, label: "分组管理", badge: false },
-  { to: "/accounts", icon: Users, label: "账号管理", badge: false },
-  { to: "/email-accounts", icon: MailOpen, label: "邮箱管理", badge: false },
-  { to: "/emails", icon: Mail, label: "收件箱", badge: true },
-  { to: "/system", icon: Settings, label: "系统设置", badge: false },
+function getRoleFromToken(): string {
+  const token = localStorage.getItem("token")
+  if (!token) return "user"
+  try {
+    const parts = token.split(".")
+    if (parts.length < 2) return "user"
+    const payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/"))) as { role?: string }
+    return payload.role || "admin"
+  } catch {
+    return "admin"
+  }
+}
+
+const allNavItems = [
+  { to: "/", icon: LayoutDashboard, label: "仪表盘", badge: false, adminOnly: false },
+  { to: "/groups", icon: FolderCog, label: "分组管理", badge: false, adminOnly: true },
+  { to: "/accounts", icon: Users, label: "账号管理", badge: false, adminOnly: true },
+  { to: "/email-accounts", icon: MailOpen, label: "邮箱管理", badge: false, adminOnly: true },
+  { to: "/emails", icon: Mail, label: "收件箱", badge: true, adminOnly: true },
+  { to: "/system", icon: Settings, label: "系统设置", badge: false, adminOnly: true },
 ]
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
@@ -29,6 +42,9 @@ function AppLayout() {
   const navigate = useNavigate()
   const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "dark")
   const [unreadCount, setUnreadCount] = useState(0)
+  const [role] = useState(() => getRoleFromToken())
+
+  const navItems = allNavItems.filter((item) => !item.adminOnly || role === "admin")
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme)
@@ -36,13 +52,14 @@ function AppLayout() {
   }, [theme])
 
   useEffect(() => {
+    if (role !== "admin") return
     const fetchUnread = () => {
       api.emails.unreadCount().then((r) => setUnreadCount(r.count)).catch(() => {})
     }
     fetchUnread()
     const timer = setInterval(fetchUnread, 30000)
     return () => clearInterval(timer)
-  }, [])
+  }, [role])
 
   const toggleTheme = () => setTheme((t) => t === "dark" ? "light" : "dark")
 

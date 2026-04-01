@@ -46,6 +46,7 @@ db.run(`
     created_at TEXT DEFAULT (datetime('now'))
   )
 `)
+try { db.run("ALTER TABLE admin ADD COLUMN role TEXT DEFAULT 'admin'") } catch { void 0 }
 
 db.run(`
   CREATE TABLE IF NOT EXISTS settings (
@@ -296,6 +297,7 @@ db.run(`
     UNIQUE(account_id, message_id)
   )
 `)
+try { db.run("ALTER TABLE emails ADD COLUMN uid INTEGER") } catch { void 0 }
 db.run("CREATE INDEX IF NOT EXISTS idx_emails_account ON emails(account_id)")
 db.run("CREATE INDEX IF NOT EXISTS idx_emails_date ON emails(date DESC)")
 
@@ -326,6 +328,7 @@ export interface EmailRow {
   is_read: number
   folder: string
   fetched_at: string
+  uid: number | null
 }
 
 export const emailAccounts = {
@@ -365,8 +368,14 @@ export const emailsDb = {
   markRead: (id: string) => db.run("UPDATE emails SET is_read = 1 WHERE id = ?", [id]),
   countUnread: () => (db.prepare<{ count: number }, []>("SELECT COUNT(*) as count FROM emails WHERE is_read = 0").get()?.count ?? 0),
   upsert: (row: Omit<EmailRow, "fetched_at" | "id">) => {
-    db.run(`INSERT OR IGNORE INTO emails (id, account_id, message_id, subject, from_name, from_address, to_address, date, body_text, body_html, folder)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [randomUUID(), row.account_id, row.message_id, row.subject, row.from_name, row.from_address, row.to_address, row.date, row.body_text, row.body_html, row.folder])
+    db.run(`INSERT OR REPLACE INTO emails (id, account_id, message_id, subject, from_name, from_address, to_address, date, body_text, body_html, folder, uid)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [randomUUID(), row.account_id, row.message_id, row.subject, row.from_name, row.from_address, row.to_address, row.date, row.body_text, row.body_html, row.folder, row.uid ?? null])
+  },
+  updateBody: (id: string, text: string, html: string) => {
+    db.run("UPDATE emails SET body_text = ?, body_html = ? WHERE id = ?", [text, html, id])
+  },
+  clearAll: () => {
+    db.run("DELETE FROM emails")
   },
 }
