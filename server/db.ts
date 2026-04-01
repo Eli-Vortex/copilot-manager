@@ -349,6 +349,7 @@ export interface EmailRow {
   folder: string
   fetched_at: string
   uid: number | null
+  source: string
 }
 
 export interface AccountSubmissionRow {
@@ -360,6 +361,8 @@ export interface AccountSubmissionRow {
   detected_login: string
   status: "pending" | "approved" | "rejected" | "cancelled"
   review_note: string
+  user_note: string
+  assigned_group_id: string | null
   created_at: string
   updated_at: string
 }
@@ -385,11 +388,13 @@ export const emailAccounts = {
 }
 
 export const emailsDb = {
-  list: (opts: { account_id?: string; limit?: number; offset?: number; unread_only?: boolean }) => {
+  list: (opts: { account_id?: string; limit?: number; offset?: number; unread_only?: boolean; has_body?: boolean; source?: string }) => {
     const where: string[] = []
     const params: (string | number)[] = []
     if (opts.account_id) { where.push("e.account_id = ?"); params.push(opts.account_id) }
     if (opts.unread_only) { where.push("e.is_read = 0") }
+    if (opts.has_body) { where.push("(e.body_text != '' OR e.body_html != '')") }
+    if (opts.source) { where.push("e.source = ?"); params.push(opts.source) }
     const whereStr = where.length ? `WHERE ${where.join(" AND ")}` : ""
     const limit = opts.limit ?? 50
     const offset = opts.offset ?? 0
@@ -402,9 +407,9 @@ export const emailsDb = {
   get: (id: string) => db.prepare<EmailRow, [string]>("SELECT * FROM emails WHERE id = ?").get(id) ?? null,
   markRead: (id: string) => db.run("UPDATE emails SET is_read = 1 WHERE id = ?", [id]),
   countUnread: () => (db.prepare<{ count: number }, []>("SELECT COUNT(*) as count FROM emails WHERE is_read = 0").get()?.count ?? 0),
-  upsert: (row: Omit<EmailRow, "fetched_at" | "id">) => {
-    db.run(`INSERT INTO emails (id, account_id, message_id, subject, from_name, from_address, to_address, date, body_text, body_html, is_read, folder, uid)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  upsert: (row: Omit<EmailRow, "fetched_at" | "id" | "source"> & { source?: string }) => {
+    db.run(`INSERT INTO emails (id, account_id, message_id, subject, from_name, from_address, to_address, date, body_text, body_html, is_read, folder, uid, source)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(account_id, message_id) DO UPDATE SET
               subject = excluded.subject,
               from_name = excluded.from_name,
@@ -414,8 +419,9 @@ export const emailsDb = {
               body_text = CASE WHEN excluded.body_text != '' THEN excluded.body_text ELSE emails.body_text END,
               body_html = CASE WHEN excluded.body_html != '' THEN excluded.body_html ELSE emails.body_html END,
               folder = excluded.folder,
-              uid = excluded.uid`,
-      [randomUUID(), row.account_id, row.message_id, row.subject, row.from_name, row.from_address, row.to_address, row.date, row.body_text, row.body_html, row.is_read, row.folder, row.uid ?? null])
+              uid = excluded.uid,
+              source = excluded.source`,
+      [randomUUID(), row.account_id, row.message_id, row.subject, row.from_name, row.from_address, row.to_address, row.date, row.body_text, row.body_html, row.is_read, row.folder, row.uid ?? null, row.source ?? "imap"])
   },
   updateBody: (id: string, text: string, html: string) => {
     db.run("UPDATE emails SET body_text = ?, body_html = ? WHERE id = ?", [text, html, id])
@@ -440,24 +446,25 @@ export const emailsDb = {
   markAllRead: () => {
     db.run("UPDATE emails SET is_read = 1 WHERE is_read = 0")
   },
+  countAll: () => (db.prepare<{ count: number }, []>("SELECT COUNT(*) as count FROM emails").get()?.count ?? 0),
 }
 
 export const accountSubmissions = {
   listAll: () => db.prepare<AccountSubmissionRow, []>("SELECT * FROM account_submissions ORDER BY created_at DESC").all(),
   listByUser: (userId: string) => db.prepare<AccountSubmissionRow, [string]>("SELECT * FROM account_submissions WHERE user_id = ? ORDER BY created_at DESC").all(userId),
   get: (id: string) => db.prepare<AccountSubmissionRow, [string]>("SELECT * FROM account_submissions WHERE id = ?").get(id) ?? null,
-  create: (data: { user_id: string; user_username: string; name: string; github_token: string; detected_login: string }) => {
+  create: (data: { user_id: string; user_username: string; name: string; github_token: string; detected_login: string; user_note?: string }) => {
     const id = randomUUID()
     db.run(
-      "INSERT INTO account_submissions (id, user_id, user_username, name, github_token, detected_login) VALUES (?, ?, ?, ?, ?, ?)",
-      [id, data.user_id, data.user_username, data.name, data.github_token, data.detected_login],
+      "INSERT INTO account_submissions (id, user_id, user_username, name, github_token, detected_login, user_note) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      [id, data.user_id, data.user_username, data.name, data.github_token, data.detected_login, data.user_note ?? ""],
     )
     return db.prepare<AccountSubmissionRow, [string]>("SELECT * FROM account_submissions WHERE id = ?").get(id)!
   },
-  updateStatus: (id: string, status: AccountSubmissionRow["status"], reviewNote = "") => {
+  updateStatus: (id: string, status: AccountSubmissionRow["status"], reviewNote = "", assignedGroupId: string | null = null) => {
     db.run(
-      "UPDATE account_submissions SET status = ?, review_note = ?, updated_at = datetime('now') WHERE id = ?",
-      [status, reviewNote, id],
+      "UPDATE account_submissions SET status = ?, review_note = ?, assigned_group_id = COALESCE(?, assigned_group_id), updated_at = datetime('now') WHERE id = ?",
+      [status, reviewNote, assignedGroupId, id],
     )
     return db.prepare<AccountSubmissionRow, [string]>("SELECT * FROM account_submissions WHERE id = ?").get(id) ?? null
   },
@@ -474,4 +481,138 @@ export const accountSubmissions = {
     const placeholders = ids.map(() => "?").join(",")
     db.run(`DELETE FROM account_submissions WHERE id IN (${placeholders})`, ids)
   },
+}
+
+try { db.run("ALTER TABLE account_submissions ADD COLUMN user_note TEXT DEFAULT ''") } catch { void 0 }
+try { db.run("ALTER TABLE account_submissions ADD COLUMN assigned_group_id TEXT DEFAULT NULL") } catch { void 0 }
+try { db.run("ALTER TABLE emails ADD COLUMN source TEXT DEFAULT 'imap'") } catch { void 0 }
+
+db.run(`
+  CREATE TABLE IF NOT EXISTS temp_inboxes (
+    id TEXT PRIMARY KEY,
+    address TEXT NOT NULL UNIQUE,
+    token TEXT NOT NULL,
+    service TEXT NOT NULL DEFAULT 'tempmail.lol',
+    status TEXT NOT NULL DEFAULT 'active',
+    expires_at TEXT NOT NULL,
+    note TEXT DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now'))
+  )
+`)
+
+db.run(`
+  CREATE TABLE IF NOT EXISTS temp_emails (
+    id TEXT PRIMARY KEY,
+    inbox_id TEXT NOT NULL REFERENCES temp_inboxes(id) ON DELETE CASCADE,
+    message_key TEXT NOT NULL,
+    sender TEXT DEFAULT '',
+    subject TEXT DEFAULT '',
+    text_body TEXT DEFAULT '',
+    html_body TEXT DEFAULT '',
+    received_at TEXT DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(inbox_id, message_key)
+  )
+`)
+
+db.run(`
+  CREATE TABLE IF NOT EXISTS operation_logs (
+    id TEXT PRIMARY KEY,
+    actor_username TEXT DEFAULT '',
+    actor_role TEXT DEFAULT '',
+    action TEXT NOT NULL,
+    target_type TEXT DEFAULT '',
+    target_id TEXT DEFAULT '',
+    details_json TEXT DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now'))
+  )
+`)
+
+db.run("CREATE INDEX IF NOT EXISTS idx_temp_emails_inbox ON temp_emails(inbox_id)")
+db.run("CREATE INDEX IF NOT EXISTS idx_temp_emails_received ON temp_emails(received_at DESC)")
+db.run("CREATE INDEX IF NOT EXISTS idx_operation_logs_created ON operation_logs(created_at DESC)")
+db.run("CREATE INDEX IF NOT EXISTS idx_operation_logs_action ON operation_logs(action)")
+
+export interface TempInboxRow {
+  id: string
+  address: string
+  token: string
+  service: string
+  status: string
+  expires_at: string
+  note: string
+  created_at: string
+}
+
+export interface TempEmailRow {
+  id: string
+  inbox_id: string
+  message_key: string
+  sender: string
+  subject: string
+  text_body: string
+  html_body: string
+  received_at: string
+  created_at: string
+}
+
+export interface OperationLogRow {
+  id: string
+  actor_username: string
+  actor_role: string
+  action: string
+  target_type: string
+  target_id: string
+  details_json: string
+  created_at: string
+}
+
+export const tempInboxes = {
+  list: () => db.prepare<TempInboxRow, []>("SELECT * FROM temp_inboxes ORDER BY created_at DESC").all(),
+  get: (id: string) => db.prepare<TempInboxRow, [string]>("SELECT * FROM temp_inboxes WHERE id = ?").get(id) ?? null,
+  create: (data: { address: string; token: string; expires_at: string; note?: string; service?: string }) => {
+    const id = randomUUID()
+    db.run(
+      "INSERT INTO temp_inboxes (id, address, token, expires_at, note, service) VALUES (?, ?, ?, ?, ?, ?)",
+      [id, data.address, data.token, data.expires_at, data.note ?? "", data.service ?? "tempmail.lol"]
+    )
+    return db.prepare<TempInboxRow, [string]>("SELECT * FROM temp_inboxes WHERE id = ?").get(id)!
+  },
+  updateNote: (id: string, note: string) => db.run("UPDATE temp_inboxes SET note = ? WHERE id = ?", [note, id]),
+  updateStatus: (id: string, status: string) => db.run("UPDATE temp_inboxes SET status = ? WHERE id = ?", [status, id]),
+  delete: (id: string) => db.run("DELETE FROM temp_inboxes WHERE id = ?", [id]),
+  deleteExpired: (nowIso: string) => db.run("DELETE FROM temp_inboxes WHERE expires_at < ?", [nowIso]),
+}
+
+export const tempEmailsDb = {
+  listByInbox: (inboxId: string) => db.prepare<TempEmailRow, [string]>("SELECT * FROM temp_emails WHERE inbox_id = ? ORDER BY received_at DESC").all(inboxId),
+  upsert: (data: Omit<TempEmailRow, "id" | "created_at">) => {
+    db.run(
+      `INSERT INTO temp_emails (id, inbox_id, message_key, sender, subject, text_body, html_body, received_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(inbox_id, message_key) DO UPDATE SET
+         sender = excluded.sender,
+         subject = excluded.subject,
+         text_body = CASE WHEN excluded.text_body != '' THEN excluded.text_body ELSE temp_emails.text_body END,
+         html_body = CASE WHEN excluded.html_body != '' THEN excluded.html_body ELSE temp_emails.html_body END,
+         received_at = excluded.received_at`,
+      [randomUUID(), data.inbox_id, data.message_key, data.sender, data.subject, data.text_body, data.html_body, data.received_at]
+    )
+  },
+  deleteByInbox: (inboxId: string) => db.run("DELETE FROM temp_emails WHERE inbox_id = ?", [inboxId]),
+  countAll: () => (db.prepare<{ count: number }, []>("SELECT COUNT(*) as count FROM temp_emails").get()?.count ?? 0),
+}
+
+export const operationLogs = {
+  list: (limit = 100) => db.prepare<OperationLogRow, [number]>("SELECT * FROM operation_logs ORDER BY created_at DESC LIMIT ?").all(limit),
+  create: (data: Omit<OperationLogRow, "id" | "created_at">) => {
+    const id = randomUUID()
+    db.run(
+      "INSERT INTO operation_logs (id, actor_username, actor_role, action, target_type, target_id, details_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      [id, data.actor_username, data.actor_role, data.action, data.target_type, data.target_id, data.details_json]
+    )
+    return db.prepare<OperationLogRow, [string]>("SELECT * FROM operation_logs WHERE id = ?").get(id)!
+  },
+  countAll: () => (db.prepare<{ count: number }, []>("SELECT COUNT(*) as count FROM operation_logs").get()?.count ?? 0),
+  deleteOlderThan: (days: number) => db.run("DELETE FROM operation_logs WHERE created_at < datetime('now', ?)", [`-${days} days`]),
 }

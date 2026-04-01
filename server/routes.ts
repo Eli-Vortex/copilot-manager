@@ -4,7 +4,7 @@ import path from "node:path"
 
 import os from "node:os"
 
-import { groups, accounts, dashboard, accountSubmissions, emailsDb } from "./db"
+import { groups, accounts, dashboard, accountSubmissions, emailsDb, operationLogs, tempEmailsDb } from "./db"
 import {
   startInstance,
   stopInstance,
@@ -404,7 +404,7 @@ api.get("/system/update-log", (c) => {
 userApi.post("/accounts/submit", async (c) => {
   try {
     const user = c.get("user") as { sub?: string; username?: string; role?: string }
-    const body = await c.req.json<{ name: string; github_token: string }>()
+    const body = await c.req.json<{ name: string; github_token: string; user_note?: string }>()
     if (!user?.sub || !user.username) return c.json({ error: "Unauthorized" }, 401)
     if (!body.name?.trim()) return c.json({ error: "name is required" }, 400)
     if (!body.github_token?.trim()) return c.json({ error: "github_token is required" }, 400)
@@ -418,6 +418,7 @@ userApi.post("/accounts/submit", async (c) => {
       name: body.name.trim(),
       github_token: body.github_token.trim(),
       detected_login: valid.login || "",
+      user_note: body.user_note?.trim() || "",
     })
     return c.json(submission, 201)
   } catch (err: unknown) {
@@ -447,20 +448,28 @@ userApi.post("/account-submissions/:id/cancel", (c) => {
 })
 
 api.get("/account-submissions", (c) => {
-  return c.json(accountSubmissions.listAll())
+  const q = (c.req.query("q") || "").toLowerCase()
+  const status = c.req.query("status") || ""
+  let rows = accountSubmissions.listAll()
+  if (q) rows = rows.filter((r) => [r.user_username, r.name, r.detected_login, r.user_note].join(" ").toLowerCase().includes(q))
+  if (status) rows = rows.filter((r) => r.status === status)
+  return c.json(rows)
 })
 
-api.post("/account-submissions/:id/approve", (c) => {
+api.post("/account-submissions/:id/approve", async (c) => {
   const submission = accountSubmissions.get(c.req.param("id"))
   if (!submission) return c.json({ error: "Submission not found" }, 404)
   if (submission.status !== "pending") return c.json({ error: "Only pending submissions can be approved" }, 400)
+  const body = await c.req.json<{ group_id?: string | null; account_type?: string; tier?: string }>()
 
   const account = accounts.create({
     name: submission.name,
     github_token: submission.github_token,
-    group_id: null,
+    account_type: body.account_type || "individual",
+    tier: body.tier || "pro",
+    group_id: body.group_id || null,
   })
-  const updated = accountSubmissions.updateStatus(submission.id, "approved", `已加入账号管理: ${account.id}`)
+  const updated = accountSubmissions.updateStatus(submission.id, "approved", `已加入账号管理: ${account.id}`, body.group_id || null)
   return c.json({ submission: updated, account })
 })
 
@@ -471,6 +480,24 @@ api.post("/account-submissions/:id/reject", async (c) => {
   const body = await c.req.json<{ review_note?: string }>()
   const updated = accountSubmissions.updateStatus(submission.id, "rejected", body.review_note?.trim() || "审核拒绝")
   return c.json(updated)
+})
+
+api.get("/system/ops-stats", (c) => {
+  const fs = require("node:fs")
+  const path = require("node:path")
+  const dbPath = path.join(process.cwd(), "data", "manager.db")
+  const sizeBytes = fs.existsSync(dbPath) ? fs.statSync(dbPath).size : 0
+  return c.json({
+    operationLogCount: operationLogs.countAll(),
+    imapEmailCount: emailsDb.countAll ? emailsDb.countAll() : 0,
+    tempEmailCount: tempEmailsDb.countAll(),
+    dbSizeBytes: sizeBytes,
+  })
+})
+
+api.get("/system/operation-logs", (c) => {
+  const limit = Number(c.req.query("limit") || 100)
+  return c.json(operationLogs.list(limit))
 })
 
 api.delete("/account-submissions/:id", (c) => {

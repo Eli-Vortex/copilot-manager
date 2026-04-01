@@ -9,6 +9,7 @@ import { authRoutes, verifyJwt, requireAdmin } from "./auth"
 import { groups } from "./db"
 import { startInstance } from "./process-manager"
 import { emailRoutes } from "./email-routes"
+import { tempmailRoutes } from "./tempmail-routes"
 
 type AppEnv = { Variables: { user: Record<string, unknown> } }
 
@@ -51,9 +52,11 @@ app.use("/api/system/*", requireAdmin)
 app.use("/api/groups*", requireAdmin)
 app.use("/api/accounts*", requireAdmin)
 app.use("/api/copilot*", requireAdmin)
+app.use("/api/tempmail*", requireAdmin)
 
 app.route("/api", api)
 app.route("/api", emailRoutes)
+app.route("/api", tempmailRoutes)
 
 if (fs.existsSync(distDir)) {
   app.get("/*", (c) => {

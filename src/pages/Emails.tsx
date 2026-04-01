@@ -28,10 +28,17 @@ export default function Emails() {
   const [selectedEmail, setSelectedEmail] = useState<EmailInfo | null>(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
   const [filterAccountId, setFilterAccountId] = useState("")
+  const [viewFilter, setViewFilter] = useState<"all" | "unread" | "has_body">("all")
+  const [sourceFilter, setSourceFilter] = useState("")
 
   const loadEmails = useCallback((accountId?: string) => {
-    return api.emails.list({ account_id: accountId || undefined, limit: 100 })
-  }, [])
+    return api.emails.list({
+      account_id: accountId || undefined,
+      limit: 100,
+      filter: viewFilter,
+      source: sourceFilter || undefined,
+    })
+  }, [viewFilter, sourceFilter])
 
   const load = useCallback(() => {
     setLoading(true)
@@ -117,6 +124,18 @@ export default function Emails() {
     setSelectedEmail(null)
   }
 
+  const handleViewFilterChange = (f: string) => {
+    setViewFilter(f as "all" | "unread" | "has_body")
+    setSelectedId(null)
+    setSelectedEmail(null)
+  }
+
+  const handleSourceFilterChange = (s: string) => {
+    setSourceFilter(s)
+    setSelectedId(null)
+    setSelectedEmail(null)
+  }
+
   const displayEmails = filterAccountId
     ? emails.filter((e) => e.account_id === filterAccountId)
     : emails
@@ -135,6 +154,24 @@ export default function Emails() {
             {accounts.map((a) => (
               <option key={a.id} value={a.id}>{a.name} ({a.email})</option>
             ))}
+          </select>
+          <select
+            value={viewFilter}
+            onChange={(e) => handleViewFilterChange(e.target.value)}
+            className="px-3 py-1.5 bg-surface-800 border border-gray-800 rounded-lg text-sm text-gray-300 focus:outline-none focus:border-emerald-500/50 transition-colors"
+          >
+            <option value="all">全部</option>
+            <option value="unread">仅未读</option>
+            <option value="has_body">仅有正文</option>
+          </select>
+          <select
+            value={sourceFilter}
+            onChange={(e) => handleSourceFilterChange(e.target.value)}
+            className="px-3 py-1.5 bg-surface-800 border border-gray-800 rounded-lg text-sm text-gray-300 focus:outline-none focus:border-emerald-500/50 transition-colors"
+          >
+            <option value="">全部来源</option>
+            <option value="imap">IMAP</option>
+            <option value="tempmail.lol">临时邮箱</option>
           </select>
         </div>
         <div className="flex items-center gap-2">
@@ -193,9 +230,12 @@ export default function Emails() {
                     {email.subject || "(无主题)"}
                   </div>
                   {(email.account_name || email.account_email) && (
-                    <div className="mt-1">
+                    <div className="mt-1 flex items-center gap-2">
                       <span className="text-xs bg-surface-700 text-gray-500 px-1.5 py-0.5 rounded">
                         {email.account_name || email.account_email}
+                      </span>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded border ${email.source === "tempmail.lol" ? "border-purple-500/30 text-purple-400 bg-purple-500/10" : "border-blue-500/30 text-blue-400 bg-blue-500/10"}`}>
+                        {email.source === "tempmail.lol" ? "Temp" : "IMAP"}
                       </span>
                     </div>
                   )}

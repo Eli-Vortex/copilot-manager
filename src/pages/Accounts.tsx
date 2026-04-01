@@ -34,6 +34,8 @@ export default function Accounts() {
   const [reviewingId, setReviewingId] = useState("")
   const [selectedSubmissionIds, setSelectedSubmissionIds] = useState<Set<string>>(new Set())
   const [rejectModal, setRejectModal] = useState<{ id: string; note: string } | null>(null)
+  const [submissionFilter, setSubmissionFilter] = useState({ q: "", status: "" })
+  const [submissionGroupPick, setSubmissionGroupPick] = useState<Record<string, string>>({})
 
   const [authMode, setAuthMode] = useState<AuthMode>("choose")
   const [deviceFlowState, setDeviceFlowState] = useState<DeviceFlowState>("idle")
@@ -42,16 +44,16 @@ export default function Accounts() {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const load = useCallback(() => {
-    Promise.all([api.accounts.list(), api.groups.list(), api.submissions.list()])
+    Promise.all([api.accounts.list(), api.groups.list(), api.submissions.list(submissionFilter)])
       .then(([a, g, s]) => { setAccounts(a); setGroups(g); setSubmissions(s); setLoading(false) })
       .catch((e) => { setError(e.message); setLoading(false) })
     api.copilotStatusAll().then(setCopilotStatus).catch(() => {})
-  }, [])
+  }, [submissionFilter])
 
   const handleApproveSubmission = async (id: string) => {
     setReviewingId(id)
     try {
-      await api.submissions.approve(id)
+      await api.submissions.approve(id, { group_id: submissionGroupPick[id] || null })
       load()
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : "审核失败")
@@ -395,6 +397,25 @@ export default function Accounts() {
             </button>
           </div>
         </div>
+        <div className="px-5 py-4 border-b border-gray-800 flex items-center gap-3">
+          <input
+            value={submissionFilter.q}
+            onChange={(e) => setSubmissionFilter({ ...submissionFilter, q: e.target.value })}
+            placeholder="搜索用户/名称/检测账号/备注..."
+            className="w-72 px-3 py-2 bg-surface-700 border border-gray-700 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-emerald-500/50 transition-colors"
+          />
+          <select
+            value={submissionFilter.status}
+            onChange={(e) => setSubmissionFilter({ ...submissionFilter, status: e.target.value })}
+            className="px-3 py-2 bg-surface-700 border border-gray-700 rounded-lg text-sm text-gray-300 focus:outline-none focus:border-emerald-500/50 transition-colors"
+          >
+            <option value="">全部状态</option>
+            <option value="pending">审核中</option>
+            <option value="approved">审核成功</option>
+            <option value="rejected">审核失败</option>
+            <option value="cancelled">已撤销</option>
+          </select>
+        </div>
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-gray-800">
@@ -404,22 +425,33 @@ export default function Accounts() {
               <th className="text-left px-5 py-3 text-gray-400 font-medium">用户</th>
               <th className="text-left px-5 py-3 text-gray-400 font-medium">名称</th>
               <th className="text-left px-5 py-3 text-gray-400 font-medium">检测账号</th>
+              <th className="text-left px-5 py-3 text-gray-400 font-medium">用户备注</th>
               <th className="text-left px-5 py-3 text-gray-400 font-medium">状态</th>
               <th className="text-left px-5 py-3 text-gray-400 font-medium">提交时间</th>
+              <th className="text-left px-5 py-3 text-gray-400 font-medium">通过分组</th>
               <th className="text-right px-5 py-3 text-gray-400 font-medium">操作</th>
             </tr>
           </thead>
           <tbody>
             {submissions.length === 0 ? (
-              <tr><td colSpan={7} className="px-5 py-8 text-center text-gray-500">暂无提交记录</td></tr>
+              <tr><td colSpan={9} className="px-5 py-8 text-center text-gray-500">暂无提交记录</td></tr>
             ) : submissions.map((s) => (
               <tr key={s.id} className="border-b border-gray-800/50">
                 <td className="px-5 py-3"><input type="checkbox" checked={selectedSubmissionIds.has(s.id)} onChange={() => toggleSubmissionSelection(s.id)} /></td>
                 <td className="px-5 py-3 text-gray-300">{s.user_username}</td>
                 <td className="px-5 py-3 text-gray-100">{s.name}</td>
                 <td className="px-5 py-3 text-gray-400">{s.detected_login || "-"}</td>
+                <td className="px-5 py-3 text-gray-400 max-w-[220px] truncate">{s.user_note || "-"}</td>
                 <td className="px-5 py-3"><SubmissionStatus status={s.status} note={s.review_note} /></td>
                 <td className="px-5 py-3 text-gray-500">{new Date(s.created_at).toLocaleString("zh-CN")}</td>
+                <td className="px-5 py-3">
+                  {s.status === "pending" ? (
+                    <select value={submissionGroupPick[s.id] || ""} onChange={(e) => setSubmissionGroupPick({ ...submissionGroupPick, [s.id]: e.target.value })} className="px-3 py-1.5 bg-surface-700 border border-gray-700 rounded-lg text-xs text-gray-300 focus:outline-none focus:border-emerald-500/50 transition-colors">
+                      <option value="">不分组</option>
+                      {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+                    </select>
+                  ) : <span className="text-gray-500 text-xs">{s.assigned_group_id ? (groupNameMap.get(s.assigned_group_id) || s.assigned_group_id) : "-"}</span>}
+                </td>
                 <td className="px-5 py-3 text-right">
                   {s.status === "pending" ? (
                     <div className="inline-flex items-center gap-2">
@@ -558,6 +590,18 @@ export default function Accounts() {
               <button onClick={() => setRejectModal(null)} className="p-1 text-gray-500 hover:text-gray-300 transition-colors"><X className="w-5 h-5" /></button>
             </div>
             <div className="space-y-4">
+              <div className="flex flex-wrap gap-2">
+                {[
+                  "Token 无效",
+                  "无 Copilot 权限",
+                  "重复提交",
+                  "账号校验失败或不符合要求",
+                ].map((tpl) => (
+                  <button key={tpl} type="button" onClick={() => setRejectModal({ ...rejectModal, note: tpl })} className="px-3 py-1.5 bg-surface-700 hover:bg-surface-600 text-gray-300 rounded-lg text-xs transition-colors">
+                    {tpl}
+                  </button>
+                ))}
+              </div>
               <textarea value={rejectModal.note} onChange={(e) => setRejectModal({ ...rejectModal, note: e.target.value })} rows={4}
                 className="w-full px-3 py-2 bg-surface-700 border border-gray-700 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-emerald-500/50 transition-colors"
                 placeholder="请输入拒绝原因" />

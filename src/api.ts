@@ -112,6 +112,29 @@ export interface EmailInfo {
   fetched_at: string; account_name?: string; account_email?: string
 }
 
+export interface TempInboxInfo {
+  id: string
+  address: string
+  token: string
+  service: string
+  status: string
+  expires_at: string
+  note: string
+  created_at: string
+}
+
+export interface TempEmailInfo {
+  id: string
+  inbox_id: string
+  message_key: string
+  sender: string
+  subject: string
+  text_body: string
+  html_body: string
+  received_at: string
+  created_at: string
+}
+
 export interface AccountSubmissionInfo {
   id: string
   user_id: string
@@ -121,6 +144,8 @@ export interface AccountSubmissionInfo {
   detected_login: string
   status: "pending" | "approved" | "rejected" | "cancelled"
   review_note: string
+  user_note?: string
+  assigned_group_id?: string | null
   created_at: string
   updated_at: string
 }
@@ -168,12 +193,17 @@ export const api = {
   submissions: {
     validate: (github_token: string) =>
       request<{ ok: boolean; login?: string; error?: string }>("/account-submissions/validate", { method: "POST", body: JSON.stringify({ github_token }) }),
-    create: (data: { name: string; github_token: string }) =>
+    create: (data: { name: string; github_token: string; user_note?: string }) =>
       request<AccountSubmissionInfo>("/accounts/submit", { method: "POST", body: JSON.stringify(data) }),
     mine: () => request<AccountSubmissionInfo[]>("/account-submissions/me"),
     cancel: (id: string) => request<AccountSubmissionInfo>(`/account-submissions/${id}/cancel`, { method: "POST" }),
-    list: () => request<AccountSubmissionInfo[]>("/account-submissions"),
-    approve: (id: string) => request<{ submission: AccountSubmissionInfo; account: AccountInfo }>(`/account-submissions/${id}/approve`, { method: "POST" }),
+    list: (params?: { q?: string; status?: string }) => {
+      const q = new URLSearchParams()
+      if (params?.q) q.set("q", params.q)
+      if (params?.status) q.set("status", params.status)
+      return request<AccountSubmissionInfo[]>(`/account-submissions?${q.toString()}`)
+    },
+    approve: (id: string, data?: { group_id?: string | null; account_type?: string; tier?: string }) => request<{ submission: AccountSubmissionInfo; account: AccountInfo }>(`/account-submissions/${id}/approve`, { method: "POST", body: JSON.stringify(data || {}) }),
     reject: (id: string, review_note: string) => request<AccountSubmissionInfo>(`/account-submissions/${id}/reject`, { method: "POST", body: JSON.stringify({ review_note }) }),
     delete: (id: string) => request<{ ok: boolean }>(`/account-submissions/${id}`, { method: "DELETE" }),
     bulkDelete: (ids: string[]) => request<{ ok: boolean }>("/account-submissions/bulk-delete", { method: "POST", body: JSON.stringify({ ids }) }),
@@ -184,6 +214,8 @@ export const api = {
     checkUpdate: () => request<{ behind: number; commits: string[] }>("/system/check-update", { method: "POST" }),
     update: () => request<{ ok: boolean; error?: string; log: string[] }>("/system/update", { method: "POST" }),
     updateLog: () => request<{ log: string[]; running: boolean }>("/system/update-log"),
+    operationLogs: (limit = 100) => request<Array<{ id: string; actor_username: string; actor_role: string; action: string; target_type: string; target_id: string; details_json: string; created_at: string }>>(`/system/operation-logs?limit=${limit}`),
+    opsStats: () => request<{ operationLogCount: number; imapEmailCount: number; tempEmailCount: number; dbSizeBytes: number }>("/system/ops-stats"),
     changePassword: (oldPassword: string, newPassword: string) =>
       request<{ ok: boolean }>("/auth/change-password", { method: "POST", body: JSON.stringify({ oldPassword, newPassword }) }),
   },
@@ -199,12 +231,15 @@ export const api = {
     delete: (id: string) => request(`/email-accounts/${id}`, { method: "DELETE" }),
   },
   emails: {
-    list: (params?: { account_id?: string; limit?: number; offset?: number; unread_only?: boolean }) => {
+    list: (params?: { account_id?: string; limit?: number; offset?: number; unread_only?: boolean; has_body?: boolean; source?: string; filter?: "all" | "unread" | "has_body" }) => {
       const q = new URLSearchParams()
       if (params?.account_id) q.set("account_id", params.account_id)
       if (params?.limit) q.set("limit", String(params.limit))
       if (params?.offset) q.set("offset", String(params.offset))
       if (params?.unread_only) q.set("unread_only", "true")
+      if (params?.has_body) q.set("has_body", "true")
+      if (params?.source) q.set("source", params.source)
+      if (params?.filter) q.set("filter", params.filter)
       return request<EmailInfo[]>(`/emails?${q.toString()}`)
     },
     get: (id: string) => request<EmailInfo>(`/emails/${id}`),
@@ -213,5 +248,15 @@ export const api = {
     fetchOne: (accountId: string) => request<{ accountId: string; name: string; newCount: number }>(`/emails/fetch/${accountId}`, { method: "POST" }),
     clear: () => request<{ ok: boolean }>("/emails/clear", { method: "POST" }),
     markAllRead: () => request<{ ok: boolean }>("/emails/mark-all-read", { method: "POST" }),
+  },
+
+  tempmail: {
+    listInboxes: () => request<TempInboxInfo[]>("/tempmail/inboxes"),
+    createInbox: (note?: string) => request<TempInboxInfo>("/tempmail/inboxes", { method: "POST", body: JSON.stringify({ note }) }),
+    updateNote: (id: string, note: string) => request<TempInboxInfo>(`/tempmail/inboxes/${id}/note`, { method: "PATCH", body: JSON.stringify({ note }) }),
+    deleteInbox: (id: string) => request<{ ok: boolean }>(`/tempmail/inboxes/${id}`, { method: "DELETE" }),
+    refreshInbox: (id: string) => request<{ inbox: TempInboxInfo | null; emails: TempEmailInfo[]; expired: boolean }>(`/tempmail/inboxes/${id}/refresh`, { method: "POST" }),
+    listEmails: (id: string) => request<{ inbox: TempInboxInfo; emails: TempEmailInfo[] }>(`/tempmail/inboxes/${id}/emails`),
+    cleanup: () => request<{ deleted: number }>("/tempmail/inboxes/cleanup", { method: "POST" }),
   },
 }

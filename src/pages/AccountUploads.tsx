@@ -6,6 +6,7 @@ import { api, type AccountSubmissionInfo } from "../api"
 export default function AccountUploads() {
   const [submitName, setSubmitName] = useState("")
   const [submitToken, setSubmitToken] = useState("")
+  const [submitNote, setSubmitNote] = useState("")
   const [submitting, setSubmitting] = useState(false)
   const [validating, setValidating] = useState(false)
   const [validation, setValidation] = useState<{ ok: boolean; login?: string; error?: string } | null>(null)
@@ -33,6 +34,7 @@ export default function AccountUploads() {
     setModalOpen(false)
     setSubmitName("")
     setSubmitToken("")
+    setSubmitNote("")
     setValidation(null)
   }
 
@@ -57,7 +59,7 @@ export default function AccountUploads() {
       const valid = await api.submissions.validate(submitToken.trim())
       setValidation(valid)
       if (!valid.ok) return
-      await api.submissions.create({ name: submitName.trim(), github_token: submitToken.trim() })
+      await api.submissions.create({ name: submitName.trim(), github_token: submitToken.trim(), user_note: submitNote.trim() })
       closeModal()
       load()
       setValidation({ ok: true, login: valid.login })
@@ -102,6 +104,7 @@ export default function AccountUploads() {
             <tr className="border-b border-gray-800">
               <th className="text-left px-5 py-3 text-gray-400 font-medium">名称</th>
               <th className="text-left px-5 py-3 text-gray-400 font-medium">检测账号</th>
+              <th className="text-left px-5 py-3 text-gray-400 font-medium">备注</th>
               <th className="text-left px-5 py-3 text-gray-400 font-medium">状态</th>
               <th className="text-left px-5 py-3 text-gray-400 font-medium">时间</th>
               <th className="text-right px-5 py-3 text-gray-400 font-medium">操作</th>
@@ -109,11 +112,12 @@ export default function AccountUploads() {
           </thead>
           <tbody>
             {submissions.length === 0 ? (
-              <tr><td colSpan={5} className="px-5 py-12 text-center text-gray-500">暂无提交记录</td></tr>
+              <tr><td colSpan={6} className="px-5 py-12 text-center text-gray-500">暂无提交记录</td></tr>
             ) : submissions.map((item) => (
               <tr key={item.id} className="border-b border-gray-800/50">
                 <td className="px-5 py-3 text-gray-200">{item.name}</td>
                 <td className="px-5 py-3 text-gray-400">{item.detected_login || "-"}</td>
+                <td className="px-5 py-3 text-gray-400 max-w-[240px] truncate">{item.user_note || "-"}</td>
                 <td className="px-5 py-3"><SubmissionBadge status={item.status} note={item.review_note} /></td>
                 <td className="px-5 py-3 text-gray-500">{new Date(item.created_at).toLocaleString("zh-CN")}</td>
                 <td className="px-5 py-3 text-right">
@@ -144,6 +148,10 @@ export default function AccountUploads() {
               <div>
                 <label className="block text-sm text-gray-400 mb-1.5">GitHub Token</label>
                 <input type="password" value={submitToken} onChange={(e) => setSubmitToken(e.target.value)} placeholder="ghu_xxxxxxxxxxxxxxxxxxxx" className="w-full px-3 py-2 bg-surface-700 border border-gray-700 rounded-lg text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-emerald-500/50 transition-colors font-mono" />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-400 mb-1.5">备注</label>
+                <textarea value={submitNote} onChange={(e) => setSubmitNote(e.target.value)} rows={3} placeholder="可填写用途、来源或需要说明的情况" className="w-full px-3 py-2 bg-surface-700 border border-gray-700 rounded-lg text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-emerald-500/50 transition-colors" />
               </div>
               {validation && (
                 <div className={`px-3 py-2 rounded-lg text-sm ${validation.ok ? "bg-emerald-500/10 border border-emerald-500/30 text-emerald-400" : "bg-red-500/10 border border-red-500/30 text-red-400"}`}>

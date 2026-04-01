@@ -83,9 +83,13 @@ emailRoutes.get("/emails", (c) => {
   const account_id = c.req.query("account_id")
   const limit = Number(c.req.query("limit") ?? 50)
   const offset = Number(c.req.query("offset") ?? 0)
-  const unread_only = c.req.query("unread_only") === "true"
+  const filter = c.req.query("filter")
+  const source = c.req.query("source") || undefined
 
-  const emails = emailsDb.list({ account_id, limit, offset, unread_only })
+  const unread_only = filter === "unread" || c.req.query("unread_only") === "true"
+  const has_body = filter === "has_body" ? true : undefined
+
+  const emails = emailsDb.list({ account_id, limit, offset, unread_only, has_body, source })
   return c.json(emails)
 })
 
