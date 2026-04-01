@@ -64,7 +64,7 @@ export async function fetchAndStoreEmails(
         envelope: true,
         internalDate: true,
         uid: true,
-      })) {
+      }, { uid: true })) {
         if (!msg.envelope) continue
 
         const envelope = msg.envelope
