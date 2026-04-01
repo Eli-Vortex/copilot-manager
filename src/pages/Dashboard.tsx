@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { Server, Users, Activity, CircleDot, Monitor, Clock, Cpu, Send } from "lucide-react"
+import { Server, Users, Activity, CircleDot, Monitor, Clock, Cpu, Send, ShieldCheck, ShieldX, Hourglass, RotateCcw } from "lucide-react"
 
-import { api, type DashboardData } from "../api"
+import { api, type DashboardData, type AccountSubmissionInfo } from "../api"
 
 function getRoleFromToken(): string {
   const token = localStorage.getItem("token")
@@ -24,11 +24,15 @@ export default function Dashboard() {
   const [submitName, setSubmitName] = useState("")
   const [submitToken, setSubmitToken] = useState("")
   const [submitting, setSubmitting] = useState(false)
-  const [submitResult, setSubmitResult] = useState<{ ok: boolean; msg: string } | null>(null)
+  const [validating, setValidating] = useState(false)
+  const [validation, setValidation] = useState<{ ok: boolean; login?: string; error?: string } | null>(null)
+  const [submissions, setSubmissions] = useState<AccountSubmissionInfo[]>([])
+  const [cancellingId, setCancellingId] = useState("")
   const navigate = useNavigate()
 
   const load = () => {
     api.dashboard().then(setData).catch((e) => setError(e.message))
+    if (role !== "admin") api.submissions.mine().then(setSubmissions).catch(() => undefined)
   }
 
   useEffect(() => {
@@ -41,16 +45,42 @@ export default function Dashboard() {
     e.preventDefault()
     if (!submitName.trim() || !submitToken.trim()) return
     setSubmitting(true)
-    setSubmitResult(null)
     try {
-      await api.accounts.submit({ name: submitName.trim(), github_token: submitToken.trim() })
-      setSubmitResult({ ok: true, msg: "账号已提交，等待管理员分配。" })
+      const valid = await api.submissions.validate(submitToken.trim())
+      setValidation(valid)
+      if (!valid.ok) return
+      await api.submissions.create({ name: submitName.trim(), github_token: submitToken.trim() })
       setSubmitName("")
       setSubmitToken("")
+      setValidation(null)
+      load()
     } catch (err: unknown) {
-      setSubmitResult({ ok: false, msg: err instanceof Error ? err.message : "提交失败" })
+      setValidation({ ok: false, error: err instanceof Error ? err.message : "提交失败" })
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  const handleValidateToken = async () => {
+    if (!submitToken.trim()) return
+    setValidating(true)
+    try {
+      const result = await api.submissions.validate(submitToken.trim())
+      setValidation(result)
+    } catch (err: unknown) {
+      setValidation({ ok: false, error: err instanceof Error ? err.message : "校验失败" })
+    } finally {
+      setValidating(false)
+    }
+  }
+
+  const handleCancelSubmission = async (id: string) => {
+    setCancellingId(id)
+    try {
+      await api.submissions.cancel(id)
+      load()
+    } finally {
+      setCancellingId("")
     }
   }
 
@@ -153,10 +183,11 @@ export default function Dashboard() {
       </div>
 
       {role !== "admin" && (
-        <div>
-          <h2 className="text-lg font-semibold mb-4">提交 Copilot 账号</h2>
-          <div className="bg-surface-800 border border-gray-800 rounded-xl p-6 max-w-lg">
-            <form onSubmit={handleSubmitAccount} className="space-y-4">
+        <div className="space-y-6">
+          <div>
+            <h2 className="text-lg font-semibold mb-4">提交 Copilot 账号</h2>
+            <div className="bg-surface-800 border border-gray-800 rounded-xl p-6 max-w-lg">
+              <form onSubmit={handleSubmitAccount} className="space-y-4">
               <div>
                 <label className="block text-sm text-gray-400 mb-1.5">名称</label>
                 <input
@@ -177,24 +208,92 @@ export default function Dashboard() {
                   className="w-full px-3 py-2 bg-surface-700 border border-gray-700 rounded-lg text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-emerald-500/50 transition-colors font-mono"
                 />
               </div>
-              {submitResult && (
-                <div className={`px-3 py-2 rounded-lg text-sm ${submitResult.ok ? "bg-emerald-500/10 border border-emerald-500/30 text-emerald-400" : "bg-red-500/10 border border-red-500/30 text-red-400"}`}>
-                  {submitResult.msg}
+              {validation && (
+                <div className={`px-3 py-2 rounded-lg text-sm ${validation.ok ? "bg-emerald-500/10 border border-emerald-500/30 text-emerald-400" : "bg-red-500/10 border border-red-500/30 text-red-400"}`}>
+                  {validation.ok ? `账号校验成功${validation.login ? `：${validation.login}` : ""}` : validation.error}
                 </div>
               )}
-              <button
-                type="submit"
-                disabled={submitting || !submitName.trim() || !submitToken.trim()}
-                className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors"
-              >
-                <Send className="w-4 h-4" />
-                {submitting ? "提交中..." : "提交账号"}
-              </button>
-            </form>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={handleValidateToken}
+                    disabled={validating || !submitToken.trim()}
+                    className="px-4 py-2 bg-surface-700 hover:bg-surface-600 disabled:opacity-50 disabled:cursor-not-allowed text-gray-200 text-sm font-medium rounded-lg transition-colors"
+                  >
+                    {validating ? "检测中..." : "检测账号"}
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={submitting || !submitName.trim() || !submitToken.trim()}
+                    className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors"
+                  >
+                    <Send className="w-4 h-4" />
+                    {submitting ? "提交中..." : "提交账号"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <div>
+            <h2 className="text-lg font-semibold mb-4">我的提交记录</h2>
+            <div className="bg-surface-800 border border-gray-800 rounded-xl overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-800">
+                    <th className="text-left px-5 py-3 text-gray-400 font-medium">名称</th>
+                    <th className="text-left px-5 py-3 text-gray-400 font-medium">检测账号</th>
+                    <th className="text-left px-5 py-3 text-gray-400 font-medium">状态</th>
+                    <th className="text-left px-5 py-3 text-gray-400 font-medium">时间</th>
+                    <th className="text-right px-5 py-3 text-gray-400 font-medium">操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {submissions.length === 0 ? (
+                    <tr><td colSpan={5} className="px-5 py-10 text-center text-gray-500">暂无提交记录</td></tr>
+                  ) : submissions.map((item) => (
+                    <tr key={item.id} className="border-b border-gray-800/50">
+                      <td className="px-5 py-3 text-gray-200">{item.name}</td>
+                      <td className="px-5 py-3 text-gray-400">{item.detected_login || "-"}</td>
+                      <td className="px-5 py-3"><SubmissionBadge status={item.status} note={item.review_note} /></td>
+                      <td className="px-5 py-3 text-gray-500">{new Date(item.created_at).toLocaleString("zh-CN")}</td>
+                      <td className="px-5 py-3 text-right">
+                        {item.status === "pending" && (
+                          <button
+                            onClick={() => handleCancelSubmission(item.id)}
+                            disabled={cancellingId === item.id}
+                            className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg text-xs disabled:opacity-50"
+                          >
+                            {cancellingId === item.id ? "撤销中..." : "撤销提交"}
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
     </div>
+  )
+}
+
+function SubmissionBadge({ status, note }: { status: string; note: string }) {
+  const map: Record<string, { cls: string; label: string; icon: typeof Hourglass }> = {
+    pending: { cls: "bg-amber-500/10 text-amber-400 border-amber-500/30", label: "审核中", icon: Hourglass },
+    approved: { cls: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30", label: "审核成功", icon: ShieldCheck },
+    rejected: { cls: "bg-red-500/10 text-red-400 border-red-500/30", label: "审核失败", icon: ShieldX },
+    cancelled: { cls: "bg-gray-500/10 text-gray-400 border-gray-500/30", label: "已撤销", icon: RotateCcw },
+  }
+  const item = map[status] || map.pending
+  const Icon = item.icon
+  return (
+    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-xs ${item.cls}`} title={note || undefined}>
+      <Icon className="w-3 h-3" />
+      {item.label}
+    </span>
   )
 }
 

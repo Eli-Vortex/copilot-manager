@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef, Fragment } from "react"
-import { Plus, Pencil, Trash2, X, Copy, Eye, EyeOff, Github, KeyRound, Loader2, ExternalLink, ChevronDown, ChevronRight } from "lucide-react"
+import { Plus, Pencil, Trash2, X, Copy, Eye, EyeOff, Github, KeyRound, Loader2, ExternalLink, ChevronDown, ChevronRight, Check, Ban } from "lucide-react"
 
-import { api, type AccountInfo, type GroupInfo, type CopilotAccountStatus } from "../api"
+import { api, type AccountInfo, type GroupInfo, type CopilotAccountStatus, type AccountSubmissionInfo } from "../api"
 
 interface FormData {
   name: string
@@ -30,6 +30,8 @@ export default function Accounts() {
   const [revealedTokens, setRevealedTokens] = useState<Set<string>>(new Set())
   const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(new Set())
   const [copilotStatus, setCopilotStatus] = useState<Record<string, CopilotAccountStatus & { _groupName: string; _groupPort: number }>>({})
+  const [submissions, setSubmissions] = useState<AccountSubmissionInfo[]>([])
+  const [reviewingId, setReviewingId] = useState("")
 
   const [authMode, setAuthMode] = useState<AuthMode>("choose")
   const [deviceFlowState, setDeviceFlowState] = useState<DeviceFlowState>("idle")
@@ -38,11 +40,37 @@ export default function Accounts() {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const load = useCallback(() => {
-    Promise.all([api.accounts.list(), api.groups.list()])
-      .then(([a, g]) => { setAccounts(a); setGroups(g); setLoading(false) })
+    Promise.all([api.accounts.list(), api.groups.list(), api.submissions.list()])
+      .then(([a, g, s]) => { setAccounts(a); setGroups(g); setSubmissions(s); setLoading(false) })
       .catch((e) => { setError(e.message); setLoading(false) })
     api.copilotStatusAll().then(setCopilotStatus).catch(() => {})
   }, [])
+
+  const handleApproveSubmission = async (id: string) => {
+    setReviewingId(id)
+    try {
+      await api.submissions.approve(id)
+      load()
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : "审核失败")
+    } finally {
+      setReviewingId("")
+    }
+  }
+
+  const handleRejectSubmission = async (id: string) => {
+    const note = prompt("填写拒绝原因", "账号校验失败或不符合要求")
+    if (note == null) return
+    setReviewingId(id)
+    try {
+      await api.submissions.reject(id, note)
+      load()
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : "拒绝失败")
+    } finally {
+      setReviewingId("")
+    }
+  }
 
   useEffect(() => { load() }, [load])
 
@@ -330,6 +358,49 @@ export default function Accounts() {
       </div>
 
       <div className="bg-surface-800 border border-gray-800 rounded-xl overflow-hidden">
+        <div className="px-5 py-4 border-b border-gray-800 flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-semibold">用户提交审核</h2>
+            <p className="text-xs text-gray-500 mt-1">审核通过后会自动加入账号管理</p>
+          </div>
+          <span className="text-xs text-gray-500">待审核 {submissions.filter((s) => s.status === "pending").length}</span>
+        </div>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-gray-800">
+              <th className="text-left px-5 py-3 text-gray-400 font-medium">用户</th>
+              <th className="text-left px-5 py-3 text-gray-400 font-medium">名称</th>
+              <th className="text-left px-5 py-3 text-gray-400 font-medium">检测账号</th>
+              <th className="text-left px-5 py-3 text-gray-400 font-medium">状态</th>
+              <th className="text-left px-5 py-3 text-gray-400 font-medium">提交时间</th>
+              <th className="text-right px-5 py-3 text-gray-400 font-medium">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {submissions.length === 0 ? (
+              <tr><td colSpan={6} className="px-5 py-8 text-center text-gray-500">暂无提交记录</td></tr>
+            ) : submissions.map((s) => (
+              <tr key={s.id} className="border-b border-gray-800/50">
+                <td className="px-5 py-3 text-gray-300">{s.user_username}</td>
+                <td className="px-5 py-3 text-gray-100">{s.name}</td>
+                <td className="px-5 py-3 text-gray-400">{s.detected_login || "-"}</td>
+                <td className="px-5 py-3"><SubmissionStatus status={s.status} note={s.review_note} /></td>
+                <td className="px-5 py-3 text-gray-500">{new Date(s.created_at).toLocaleString("zh-CN")}</td>
+                <td className="px-5 py-3 text-right">
+                  {s.status === "pending" ? (
+                    <div className="inline-flex items-center gap-2">
+                      <button onClick={() => handleApproveSubmission(s.id)} disabled={reviewingId === s.id} className="p-1.5 rounded-md text-emerald-400 hover:bg-emerald-500/15 transition-colors"><Check className="w-4 h-4" /></button>
+                      <button onClick={() => handleRejectSubmission(s.id)} disabled={reviewingId === s.id} className="p-1.5 rounded-md text-red-400 hover:bg-red-500/15 transition-colors"><Ban className="w-4 h-4" /></button>
+                    </div>
+                  ) : <span className="text-gray-600 text-xs">已处理</span>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="bg-surface-800 border border-gray-800 rounded-xl overflow-hidden">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-gray-800">
@@ -516,4 +587,20 @@ function InlineQuotaBar({ label, q }: { label: string; q: { used: number; total:
       </div>
     </div>
   )
+}
+
+function SubmissionStatus({ status, note }: { status: string; note: string }) {
+  const map: Record<string, string> = {
+    pending: "bg-amber-500/10 text-amber-400 border-amber-500/30",
+    approved: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30",
+    rejected: "bg-red-500/10 text-red-400 border-red-500/30",
+    cancelled: "bg-gray-500/10 text-gray-400 border-gray-500/30",
+  }
+  const label: Record<string, string> = {
+    pending: "审核中",
+    approved: "审核成功",
+    rejected: "审核失败",
+    cancelled: "已撤销",
+  }
+  return <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs border ${map[status] || map.pending}`} title={note || undefined}>{label[status] || status}</span>
 }

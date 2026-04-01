@@ -301,6 +301,23 @@ try { db.run("ALTER TABLE emails ADD COLUMN uid INTEGER") } catch { void 0 }
 db.run("CREATE INDEX IF NOT EXISTS idx_emails_account ON emails(account_id)")
 db.run("CREATE INDEX IF NOT EXISTS idx_emails_date ON emails(date DESC)")
 
+db.run(`
+  CREATE TABLE IF NOT EXISTS account_submissions (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES admin(id) ON DELETE CASCADE,
+    user_username TEXT NOT NULL,
+    name TEXT NOT NULL,
+    github_token TEXT NOT NULL,
+    detected_login TEXT DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'pending',
+    review_note TEXT DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  )
+`)
+db.run("CREATE INDEX IF NOT EXISTS idx_account_submissions_user ON account_submissions(user_id)")
+db.run("CREATE INDEX IF NOT EXISTS idx_account_submissions_status ON account_submissions(status)")
+
 export interface EmailAccountRow {
   id: string
   name: string
@@ -329,6 +346,19 @@ export interface EmailRow {
   folder: string
   fetched_at: string
   uid: number | null
+}
+
+export interface AccountSubmissionRow {
+  id: string
+  user_id: string
+  user_username: string
+  name: string
+  github_token: string
+  detected_login: string
+  status: "pending" | "approved" | "rejected" | "cancelled"
+  review_note: string
+  created_at: string
+  updated_at: string
 }
 
 export const emailAccounts = {
@@ -378,7 +408,49 @@ export const emailsDb = {
   clearAll: () => {
     db.run("DELETE FROM emails")
   },
+  clearAccount: (accountId: string) => {
+    db.run("DELETE FROM emails WHERE account_id = ?", [accountId])
+  },
+  keepOnlyMessageIds: (accountId: string, messageIds: string[]) => {
+    if (messageIds.length === 0) {
+      db.run("DELETE FROM emails WHERE account_id = ?", [accountId])
+      return
+    }
+    const placeholders = messageIds.map(() => "?").join(",")
+    db.run(
+      `DELETE FROM emails WHERE account_id = ? AND message_id NOT IN (${placeholders})`,
+      [accountId, ...messageIds],
+    )
+  },
   markAllRead: () => {
     db.run("UPDATE emails SET is_read = 1 WHERE is_read = 0")
+  },
+}
+
+export const accountSubmissions = {
+  listAll: () => db.prepare<AccountSubmissionRow, []>("SELECT * FROM account_submissions ORDER BY created_at DESC").all(),
+  listByUser: (userId: string) => db.prepare<AccountSubmissionRow, [string]>("SELECT * FROM account_submissions WHERE user_id = ? ORDER BY created_at DESC").all(userId),
+  get: (id: string) => db.prepare<AccountSubmissionRow, [string]>("SELECT * FROM account_submissions WHERE id = ?").get(id) ?? null,
+  create: (data: { user_id: string; user_username: string; name: string; github_token: string; detected_login: string }) => {
+    const id = randomUUID()
+    db.run(
+      "INSERT INTO account_submissions (id, user_id, user_username, name, github_token, detected_login) VALUES (?, ?, ?, ?, ?, ?)",
+      [id, data.user_id, data.user_username, data.name, data.github_token, data.detected_login],
+    )
+    return db.prepare<AccountSubmissionRow, [string]>("SELECT * FROM account_submissions WHERE id = ?").get(id)!
+  },
+  updateStatus: (id: string, status: AccountSubmissionRow["status"], reviewNote = "") => {
+    db.run(
+      "UPDATE account_submissions SET status = ?, review_note = ?, updated_at = datetime('now') WHERE id = ?",
+      [status, reviewNote, id],
+    )
+    return db.prepare<AccountSubmissionRow, [string]>("SELECT * FROM account_submissions WHERE id = ?").get(id) ?? null
+  },
+  cancel: (id: string, userId: string) => {
+    db.run(
+      "UPDATE account_submissions SET status = 'cancelled', updated_at = datetime('now') WHERE id = ? AND user_id = ? AND status = 'pending'",
+      [id, userId],
+    )
+    return db.prepare<AccountSubmissionRow, [string]>("SELECT * FROM account_submissions WHERE id = ?").get(id) ?? null
   },
 }

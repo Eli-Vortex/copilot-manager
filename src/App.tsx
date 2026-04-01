@@ -57,7 +57,7 @@ function AppLayout() {
       api.emails.unreadCount().then((r) => setUnreadCount(r.count)).catch(() => {})
     }
     fetchUnread()
-    const timer = setInterval(fetchUnread, 30000)
+    const timer = setInterval(fetchUnread, 10000)
     return () => clearInterval(timer)
   }, [role])
 

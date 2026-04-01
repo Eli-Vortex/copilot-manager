@@ -112,6 +112,19 @@ export interface EmailInfo {
   fetched_at: string; account_name?: string; account_email?: string
 }
 
+export interface AccountSubmissionInfo {
+  id: string
+  user_id: string
+  user_username: string
+  name: string
+  github_token: string
+  detected_login: string
+  status: "pending" | "approved" | "rejected" | "cancelled"
+  review_note: string
+  created_at: string
+  updated_at: string
+}
+
 export const api = {
   dashboard: () => request<DashboardData>("/dashboard"),
 
@@ -150,6 +163,18 @@ export const api = {
     delete: (id: string) => request(`/accounts/${id}`, { method: "DELETE" }),
     submit: (data: { name: string; github_token: string }) =>
       request<AccountInfo>("/accounts/submit", { method: "POST", body: JSON.stringify(data) }),
+  },
+
+  submissions: {
+    validate: (github_token: string) =>
+      request<{ ok: boolean; login?: string; error?: string }>("/account-submissions/validate", { method: "POST", body: JSON.stringify({ github_token }) }),
+    create: (data: { name: string; github_token: string }) =>
+      request<AccountSubmissionInfo>("/accounts/submit", { method: "POST", body: JSON.stringify(data) }),
+    mine: () => request<AccountSubmissionInfo[]>("/account-submissions/me"),
+    cancel: (id: string) => request<AccountSubmissionInfo>(`/account-submissions/${id}/cancel`, { method: "POST" }),
+    list: () => request<AccountSubmissionInfo[]>("/account-submissions"),
+    approve: (id: string) => request<{ submission: AccountSubmissionInfo; account: AccountInfo }>(`/account-submissions/${id}/approve`, { method: "POST" }),
+    reject: (id: string, review_note: string) => request<AccountSubmissionInfo>(`/account-submissions/${id}/reject`, { method: "POST", body: JSON.stringify({ review_note }) }),
   },
 
   system: {

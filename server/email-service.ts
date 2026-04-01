@@ -22,7 +22,7 @@ export async function testConnection(account: EmailAccountRow): Promise<{ ok: bo
 export async function fetchAndStoreEmails(
   account: EmailAccountRow,
   folder = "INBOX",
-  limit = 15
+  limit = 30
 ): Promise<number> {
   const client = new ImapFlow({
     host: account.imap_host,
@@ -38,10 +38,7 @@ export async function fetchAndStoreEmails(
     let newCount = 0
 
     try {
-      const since = new Date()
-      since.setDate(since.getDate() - 30)
-
-      const uids = await client.search({ since }, { uid: true })
+      const uids = await client.search({ all: true }, { uid: true })
       if (uids.length === 0) return 0
 
       const recentUids = uids.slice(-limit)
@@ -59,7 +56,6 @@ export async function fetchAndStoreEmails(
 
       for await (const msg of client.fetch(uidRange, {
         envelope: true,
-        source: true,
         uid: true,
       })) {
         if (!msg.envelope) continue
@@ -93,6 +89,8 @@ export async function fetchAndStoreEmails(
         })
         newCount++
       }
+
+      emailsDb.keepOnlyMessageIds(account.id, fetched.map((m) => m.messageId))
     } finally {
       lock.release()
     }

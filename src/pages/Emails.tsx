@@ -53,16 +53,18 @@ export default function Emails() {
   filterRef.current = filterAccountId
   useEffect(() => {
     const timer = setInterval(() => {
-      Promise.all([
-        loadEmails(filterRef.current),
-        api.emailAccounts.list(),
-      ])
+      api.emails.fetchAll()
+        .catch(() => undefined)
+        .then(() => Promise.all([
+          loadEmails(filterRef.current),
+          api.emailAccounts.list(),
+        ]))
         .then(([emailList, accountList]) => {
           setEmails(emailList)
           setAccounts(accountList)
         })
         .catch(() => {})
-    }, 60000)
+    }, 10000)
     return () => clearInterval(timer)
   }, [loadEmails])
 

@@ -4,7 +4,7 @@ import path from "node:path"
 
 import os from "node:os"
 
-import { groups, accounts, dashboard } from "./db"
+import { groups, accounts, dashboard, accountSubmissions } from "./db"
 import {
   startInstance,
   stopInstance,
@@ -24,6 +24,30 @@ const GITHUB_SCOPES = "read:user"
 const GITHUB_BASE = "https://github.com"
 const GITHUB_API_BASE = "https://api.github.com"
 const oauthHeaders = { "content-type": "application/json", accept: "application/json" }
+
+async function validateGithubCopilotToken(githubToken: string): Promise<{ ok: boolean; login?: string; error?: string }> {
+  try {
+    const userRes = await fetch("https://api.github.com/user", {
+      headers: { authorization: `token ${githubToken}`, accept: "application/vnd.github+json", "user-agent": "copilot-manager" },
+    })
+    if (!userRes.ok) return { ok: false, error: "GitHub Token 无效" }
+    const user = await userRes.json() as { login?: string }
+
+    const copilotRes = await fetch("https://api.github.com/copilot_internal/v2/token", {
+      headers: {
+        authorization: `token ${githubToken}`,
+        accept: "application/json",
+        "user-agent": "copilot-manager",
+        "editor-version": "vscode/1.99.0",
+      },
+    })
+    if (!copilotRes.ok) return { ok: false, error: "该账号没有可用的 Copilot 访问权限" }
+
+    return { ok: true, login: user.login || "" }
+  } catch (err: unknown) {
+    return { ok: false, error: err instanceof Error ? err.message : "校验失败" }
+  }
+}
 
 const pendingFlows = new Map<string, { device_code: string; interval: number; expires_at: number }>()
 
@@ -375,12 +399,72 @@ api.get("/system/update-log", (c) => {
 
 userApi.post("/accounts/submit", async (c) => {
   try {
+    const user = c.get("user") as { sub?: string; username?: string; role?: string }
     const body = await c.req.json<{ name: string; github_token: string }>()
+    if (!user?.sub || !user.username) return c.json({ error: "Unauthorized" }, 401)
     if (!body.name?.trim()) return c.json({ error: "name is required" }, 400)
     if (!body.github_token?.trim()) return c.json({ error: "github_token is required" }, 400)
-    const account = accounts.create({ name: body.name, github_token: body.github_token, group_id: null })
-    return c.json(account, 201)
+
+    const valid = await validateGithubCopilotToken(body.github_token.trim())
+    if (!valid.ok) return c.json({ error: valid.error || "账号校验失败" }, 400)
+
+    const submission = accountSubmissions.create({
+      user_id: user.sub,
+      user_username: user.username,
+      name: body.name.trim(),
+      github_token: body.github_token.trim(),
+      detected_login: valid.login || "",
+    })
+    return c.json(submission, 201)
   } catch (err: unknown) {
     return c.json({ error: err instanceof Error ? err.message : String(err) }, 500)
   }
+})
+
+userApi.get("/account-submissions/me", (c) => {
+  const user = c.get("user") as { sub?: string }
+  if (!user?.sub) return c.json({ error: "Unauthorized" }, 401)
+  return c.json(accountSubmissions.listByUser(user.sub))
+})
+
+userApi.post("/account-submissions/validate", async (c) => {
+  const body = await c.req.json<{ github_token: string }>()
+  if (!body.github_token?.trim()) return c.json({ error: "github_token is required" }, 400)
+  const result = await validateGithubCopilotToken(body.github_token.trim())
+  return c.json(result, result.ok ? 200 : 400)
+})
+
+userApi.post("/account-submissions/:id/cancel", (c) => {
+  const user = c.get("user") as { sub?: string }
+  if (!user?.sub) return c.json({ error: "Unauthorized" }, 401)
+  const updated = accountSubmissions.cancel(c.req.param("id"), user.sub)
+  if (!updated) return c.json({ error: "Submission not found" }, 404)
+  return c.json(updated)
+})
+
+api.get("/account-submissions", (c) => {
+  return c.json(accountSubmissions.listAll())
+})
+
+api.post("/account-submissions/:id/approve", (c) => {
+  const submission = accountSubmissions.get(c.req.param("id"))
+  if (!submission) return c.json({ error: "Submission not found" }, 404)
+  if (submission.status !== "pending") return c.json({ error: "Only pending submissions can be approved" }, 400)
+
+  const account = accounts.create({
+    name: submission.name,
+    github_token: submission.github_token,
+    group_id: null,
+  })
+  const updated = accountSubmissions.updateStatus(submission.id, "approved", `已加入账号管理: ${account.id}`)
+  return c.json({ submission: updated, account })
+})
+
+api.post("/account-submissions/:id/reject", async (c) => {
+  const submission = accountSubmissions.get(c.req.param("id"))
+  if (!submission) return c.json({ error: "Submission not found" }, 404)
+  if (submission.status !== "pending") return c.json({ error: "Only pending submissions can be rejected" }, 400)
+  const body = await c.req.json<{ review_note?: string }>()
+  const updated = accountSubmissions.updateStatus(submission.id, "rejected", body.review_note?.trim() || "审核拒绝")
+  return c.json(updated)
 })

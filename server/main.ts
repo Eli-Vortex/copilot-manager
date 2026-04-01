@@ -46,6 +46,7 @@ app.route("/api", userApi)
 
 app.use("/api/emails*", requireAdmin)
 app.use("/api/email-accounts*", requireAdmin)
+app.use("/api/account-submissions*", requireAdmin)
 app.use("/api/system/*", requireAdmin)
 app.use("/api/groups*", requireAdmin)
 app.use("/api/accounts*", requireAdmin)
