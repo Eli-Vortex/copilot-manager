@@ -1,12 +1,30 @@
 import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { Server, Users, Activity, CircleDot, Monitor, Clock, Cpu } from "lucide-react"
+import { Server, Users, Activity, CircleDot, Monitor, Clock, Cpu, Send } from "lucide-react"
 
 import { api, type DashboardData } from "../api"
+
+function getRoleFromToken(): string {
+  const token = localStorage.getItem("token")
+  if (!token) return "user"
+  try {
+    const parts = token.split(".")
+    if (parts.length < 2) return "user"
+    const payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/"))) as { role?: string }
+    return payload.role || "user"
+  } catch {
+    return "user"
+  }
+}
 
 export default function Dashboard() {
   const [data, setData] = useState<DashboardData | null>(null)
   const [error, setError] = useState("")
+  const [role] = useState(() => getRoleFromToken())
+  const [submitName, setSubmitName] = useState("")
+  const [submitToken, setSubmitToken] = useState("")
+  const [submitting, setSubmitting] = useState(false)
+  const [submitResult, setSubmitResult] = useState<{ ok: boolean; msg: string } | null>(null)
   const navigate = useNavigate()
 
   const load = () => {
@@ -18,6 +36,23 @@ export default function Dashboard() {
     const timer = setInterval(load, 5000)
     return () => clearInterval(timer)
   }, [])
+
+  const handleSubmitAccount = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!submitName.trim() || !submitToken.trim()) return
+    setSubmitting(true)
+    setSubmitResult(null)
+    try {
+      await api.accounts.submit({ name: submitName.trim(), github_token: submitToken.trim() })
+      setSubmitResult({ ok: true, msg: "账号已提交，等待管理员分配。" })
+      setSubmitName("")
+      setSubmitToken("")
+    } catch (err: unknown) {
+      setSubmitResult({ ok: false, msg: err instanceof Error ? err.message : "提交失败" })
+    } finally {
+      setSubmitting(false)
+    }
+  }
 
   if (error) {
     return (
@@ -116,6 +151,49 @@ export default function Dashboard() {
           ))}
         </div>
       </div>
+
+      {role !== "admin" && (
+        <div>
+          <h2 className="text-lg font-semibold mb-4">提交 Copilot 账号</h2>
+          <div className="bg-surface-800 border border-gray-800 rounded-xl p-6 max-w-lg">
+            <form onSubmit={handleSubmitAccount} className="space-y-4">
+              <div>
+                <label className="block text-sm text-gray-400 mb-1.5">名称</label>
+                <input
+                  type="text"
+                  value={submitName}
+                  onChange={(e) => setSubmitName(e.target.value)}
+                  placeholder="账号名称"
+                  className="w-full px-3 py-2 bg-surface-700 border border-gray-700 rounded-lg text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-emerald-500/50 transition-colors"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-400 mb-1.5">GitHub Token</label>
+                <input
+                  type="password"
+                  value={submitToken}
+                  onChange={(e) => setSubmitToken(e.target.value)}
+                  placeholder="ghu_xxxxxxxxxxxxxxxxxxxx"
+                  className="w-full px-3 py-2 bg-surface-700 border border-gray-700 rounded-lg text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-emerald-500/50 transition-colors font-mono"
+                />
+              </div>
+              {submitResult && (
+                <div className={`px-3 py-2 rounded-lg text-sm ${submitResult.ok ? "bg-emerald-500/10 border border-emerald-500/30 text-emerald-400" : "bg-red-500/10 border border-red-500/30 text-red-400"}`}>
+                  {submitResult.msg}
+                </div>
+              )}
+              <button
+                type="submit"
+                disabled={submitting || !submitName.trim() || !submitToken.trim()}
+                className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors"
+              >
+                <Send className="w-4 h-4" />
+                {submitting ? "提交中..." : "提交账号"}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

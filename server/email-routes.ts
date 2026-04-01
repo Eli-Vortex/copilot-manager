@@ -92,6 +92,11 @@ emailRoutes.get("/emails/unread-count", (c) => {
   return c.json({ count })
 })
 
+emailRoutes.post("/emails/mark-all-read", (c) => {
+  emailsDb.markAllRead()
+  return c.json({ ok: true })
+})
+
 emailRoutes.post("/emails/clear", (c) => {
   emailsDb.clearAll()
   return c.json({ ok: true })

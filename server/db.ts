@@ -378,4 +378,7 @@ export const emailsDb = {
   clearAll: () => {
     db.run("DELETE FROM emails")
   },
+  markAllRead: () => {
+    db.run("UPDATE emails SET is_read = 1 WHERE is_read = 0")
+  },
 }

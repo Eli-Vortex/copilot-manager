@@ -4,7 +4,7 @@ import path from "node:path"
 import { Hono } from "hono"
 import { cors } from "hono/cors"
 
-import { api } from "./routes"
+import { api, userApi } from "./routes"
 import { authRoutes, verifyJwt, requireAdmin } from "./auth"
 import { groups } from "./db"
 import { startInstance } from "./process-manager"
@@ -41,6 +41,8 @@ app.use("/api/*", async (c, next) => {
   c.set("user", payload)
   await next()
 })
+
+app.route("/api", userApi)
 
 app.use("/api/emails*", requireAdmin)
 app.use("/api/email-accounts*", requireAdmin)

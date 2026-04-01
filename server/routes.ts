@@ -17,6 +17,8 @@ import {
 
 export const api = new Hono()
 
+export const userApi = new Hono()
+
 const GITHUB_CLIENT_ID = "Iv1.b507a08c87ecfe98"
 const GITHUB_SCOPES = "read:user"
 const GITHUB_BASE = "https://github.com"
@@ -369,4 +371,16 @@ api.post("/system/update", async (c) => {
 
 api.get("/system/update-log", (c) => {
   return c.json({ log: updateLog, running: updateRunning })
+})
+
+userApi.post("/accounts/submit", async (c) => {
+  try {
+    const body = await c.req.json<{ name: string; github_token: string }>()
+    if (!body.name?.trim()) return c.json({ error: "name is required" }, 400)
+    if (!body.github_token?.trim()) return c.json({ error: "github_token is required" }, 400)
+    const account = accounts.create({ name: body.name, github_token: body.github_token, group_id: null })
+    return c.json(account, 201)
+  } catch (err: unknown) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 500)
+  }
 })

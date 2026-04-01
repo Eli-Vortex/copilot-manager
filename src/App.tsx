@@ -93,7 +93,7 @@ function AppLayout() {
               <span className="flex-1">{item.label}</span>
               {item.badge && unreadCount > 0 && (
                 <span className="bg-red-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center leading-none">
-                  {unreadCount > 99 ? "99+" : unreadCount}
+                  {unreadCount > 999 ? "999+" : unreadCount}
                 </span>
               )}
             </NavLink>

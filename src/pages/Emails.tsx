@@ -1,5 +1,5 @@
-import { useEffect, useState, useCallback } from "react"
-import { RefreshCw, Loader2, Mail } from "lucide-react"
+import { useEffect, useState, useCallback, useRef } from "react"
+import { RefreshCw, Loader2, Mail, CheckCheck } from "lucide-react"
 
 import { api, type EmailAccountInfo, type EmailInfo } from "../api"
 
@@ -23,6 +23,7 @@ export default function Emails() {
   const [accounts, setAccounts] = useState<EmailAccountInfo[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [markingAllRead, setMarkingAllRead] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [selectedEmail, setSelectedEmail] = useState<EmailInfo | null>(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
@@ -48,6 +49,23 @@ export default function Emails() {
 
   useEffect(() => { load() }, [load])
 
+  const filterRef = useRef(filterAccountId)
+  filterRef.current = filterAccountId
+  useEffect(() => {
+    const timer = setInterval(() => {
+      Promise.all([
+        loadEmails(filterRef.current),
+        api.emailAccounts.list(),
+      ])
+        .then(([emailList, accountList]) => {
+          setEmails(emailList)
+          setAccounts(accountList)
+        })
+        .catch(() => {})
+    }, 60000)
+    return () => clearInterval(timer)
+  }, [loadEmails])
+
   const handleSelectEmail = async (email: EmailInfo) => {
     setSelectedId(email.id)
     setLoadingDetail(true)
@@ -70,6 +88,17 @@ export default function Emails() {
     } catch {
     } finally {
       setRefreshing(false)
+    }
+  }
+
+  const handleMarkAllRead = async () => {
+    setMarkingAllRead(true)
+    try {
+      await api.emails.markAllRead()
+      setEmails((prev) => prev.map((e) => ({ ...e, is_read: 1 })))
+    } catch {
+    } finally {
+      setMarkingAllRead(false)
     }
   }
 
@@ -99,14 +128,24 @@ export default function Emails() {
             ))}
           </select>
         </div>
-        <button
-          onClick={handleRefresh}
-          disabled={refreshing}
-          className="flex items-center gap-2 px-3 py-1.5 bg-surface-800 hover:bg-surface-700 border border-gray-800 hover:border-gray-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm text-gray-300 rounded-lg transition-colors"
-        >
-          <RefreshCw className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`} />
-          {refreshing ? "拉取中..." : "刷新邮件"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleMarkAllRead}
+            disabled={markingAllRead}
+            className="flex items-center gap-2 px-3 py-1.5 bg-surface-800 hover:bg-surface-700 border border-gray-800 hover:border-gray-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm text-gray-300 rounded-lg transition-colors"
+          >
+            <CheckCheck className={`w-4 h-4 ${markingAllRead ? "animate-pulse" : ""}`} />
+            {markingAllRead ? "处理中..." : "全部已读"}
+          </button>
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="flex items-center gap-2 px-3 py-1.5 bg-surface-800 hover:bg-surface-700 border border-gray-800 hover:border-gray-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm text-gray-300 rounded-lg transition-colors"
+          >
+            <RefreshCw className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`} />
+            {refreshing ? "拉取中..." : "刷新邮件"}
+          </button>
+        </div>
       </div>
 
       <div className="flex flex-1 overflow-hidden">
@@ -187,7 +226,7 @@ export default function Emails() {
                 {selectedEmail.body_html ? (
                   <iframe
                     sandbox="allow-same-origin allow-popups"
-                    srcDoc={selectedEmail.body_html}
+                   srcDoc={`<base target="_blank"><style>body{margin:0;font-family:sans-serif}</style>${selectedEmail.body_html}`}
                     className="w-full"
                     style={{ height: "500px", border: "none" }}
                     title="邮件内容"

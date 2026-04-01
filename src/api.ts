@@ -148,6 +148,8 @@ export const api = {
     update: (id: string, data: { name: string; github_token: string; account_type?: string; tier?: string; active?: boolean; group_id?: string | null }) =>
       request(`/accounts/${id}`, { method: "PUT", body: JSON.stringify(data) }),
     delete: (id: string) => request(`/accounts/${id}`, { method: "DELETE" }),
+    submit: (data: { name: string; github_token: string }) =>
+      request<AccountInfo>("/accounts/submit", { method: "POST", body: JSON.stringify(data) }),
   },
 
   system: {
@@ -183,5 +185,6 @@ export const api = {
     fetchAll: () => request<Array<{ accountId: string; name: string; newCount: number; error?: string }>>("/emails/fetch", { method: "POST" }),
     fetchOne: (accountId: string) => request<{ accountId: string; name: string; newCount: number }>(`/emails/fetch/${accountId}`, { method: "POST" }),
     clear: () => request<{ ok: boolean }>("/emails/clear", { method: "POST" }),
+    markAllRead: () => request<{ ok: boolean }>("/emails/mark-all-read", { method: "POST" }),
   },
 }
