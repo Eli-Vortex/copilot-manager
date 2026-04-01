@@ -472,3 +472,17 @@ api.post("/account-submissions/:id/reject", async (c) => {
   const updated = accountSubmissions.updateStatus(submission.id, "rejected", body.review_note?.trim() || "审核拒绝")
   return c.json(updated)
 })
+
+api.delete("/account-submissions/:id", (c) => {
+  const submission = accountSubmissions.get(c.req.param("id"))
+  if (!submission) return c.json({ error: "Submission not found" }, 404)
+  accountSubmissions.deleteOne(submission.id)
+  return c.json({ ok: true })
+})
+
+api.post("/account-submissions/bulk-delete", async (c) => {
+  const body = await c.req.json<{ ids: string[] }>()
+  if (!Array.isArray(body.ids) || body.ids.length === 0) return c.json({ error: "ids is required" }, 400)
+  accountSubmissions.deleteMany(body.ids)
+  return c.json({ ok: true })
+})

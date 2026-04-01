@@ -175,6 +175,8 @@ export const api = {
     list: () => request<AccountSubmissionInfo[]>("/account-submissions"),
     approve: (id: string) => request<{ submission: AccountSubmissionInfo; account: AccountInfo }>(`/account-submissions/${id}/approve`, { method: "POST" }),
     reject: (id: string, review_note: string) => request<AccountSubmissionInfo>(`/account-submissions/${id}/reject`, { method: "POST", body: JSON.stringify({ review_note }) }),
+    delete: (id: string) => request<{ ok: boolean }>(`/account-submissions/${id}`, { method: "DELETE" }),
+    bulkDelete: (ids: string[]) => request<{ ok: boolean }>("/account-submissions/bulk-delete", { method: "POST", body: JSON.stringify({ ids }) }),
   },
 
   system: {

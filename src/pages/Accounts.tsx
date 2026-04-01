@@ -32,6 +32,8 @@ export default function Accounts() {
   const [copilotStatus, setCopilotStatus] = useState<Record<string, CopilotAccountStatus & { _groupName: string; _groupPort: number }>>({})
   const [submissions, setSubmissions] = useState<AccountSubmissionInfo[]>([])
   const [reviewingId, setReviewingId] = useState("")
+  const [selectedSubmissionIds, setSelectedSubmissionIds] = useState<Set<string>>(new Set())
+  const [rejectModal, setRejectModal] = useState<{ id: string; note: string } | null>(null)
 
   const [authMode, setAuthMode] = useState<AuthMode>("choose")
   const [deviceFlowState, setDeviceFlowState] = useState<DeviceFlowState>("idle")
@@ -58,18 +60,41 @@ export default function Accounts() {
     }
   }
 
-  const handleRejectSubmission = async (id: string) => {
-    const note = prompt("填写拒绝原因", "账号校验失败或不符合要求")
-    if (note == null) return
+  const handleRejectSubmission = async (id: string, note: string) => {
     setReviewingId(id)
     try {
       await api.submissions.reject(id, note)
+      setRejectModal(null)
       load()
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : "拒绝失败")
     } finally {
       setReviewingId("")
     }
+  }
+
+  const handleDeleteSubmission = async (id: string) => {
+    if (!confirm("确认删除这条提交记录？")) return
+    await api.submissions.delete(id)
+    load()
+  }
+
+  const handleBulkDeleteSubmissions = async () => {
+    const ids = [...selectedSubmissionIds]
+    if (ids.length === 0) return
+    if (!confirm(`确认批量删除 ${ids.length} 条提交记录？`)) return
+    await api.submissions.bulkDelete(ids)
+    setSelectedSubmissionIds(new Set())
+    load()
+  }
+
+  const toggleSubmissionSelection = (id: string) => {
+    setSelectedSubmissionIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
   }
 
   useEffect(() => { load() }, [load])
@@ -329,7 +354,7 @@ export default function Accounts() {
   )
 
   return (
-    <div className="p-8 space-y-6">
+    <div className="p-8 flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">账号管理</h1>
@@ -357,17 +382,25 @@ export default function Accounts() {
         </select>
       </div>
 
-      <div className="bg-surface-800 border border-gray-800 rounded-xl overflow-hidden">
+      <div className="bg-surface-800 border border-gray-800 rounded-xl overflow-hidden order-2">
         <div className="px-5 py-4 border-b border-gray-800 flex items-center justify-between">
           <div>
             <h2 className="text-lg font-semibold">用户提交审核</h2>
             <p className="text-xs text-gray-500 mt-1">审核通过后会自动加入账号管理</p>
           </div>
-          <span className="text-xs text-gray-500">待审核 {submissions.filter((s) => s.status === "pending").length}</span>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-gray-500">待审核 {submissions.filter((s) => s.status === "pending").length}</span>
+            <button onClick={handleBulkDeleteSubmissions} disabled={selectedSubmissionIds.size === 0} className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 disabled:opacity-40 disabled:cursor-not-allowed text-red-400 rounded-lg text-xs transition-colors">
+              批量删除 ({selectedSubmissionIds.size})
+            </button>
+          </div>
         </div>
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-gray-800">
+              <th className="text-left px-5 py-3 text-gray-400 font-medium w-12">
+                <input type="checkbox" checked={submissions.length > 0 && selectedSubmissionIds.size === submissions.length} onChange={(e) => setSelectedSubmissionIds(e.target.checked ? new Set(submissions.map((s) => s.id)) : new Set())} />
+              </th>
               <th className="text-left px-5 py-3 text-gray-400 font-medium">用户</th>
               <th className="text-left px-5 py-3 text-gray-400 font-medium">名称</th>
               <th className="text-left px-5 py-3 text-gray-400 font-medium">检测账号</th>
@@ -378,9 +411,10 @@ export default function Accounts() {
           </thead>
           <tbody>
             {submissions.length === 0 ? (
-              <tr><td colSpan={6} className="px-5 py-8 text-center text-gray-500">暂无提交记录</td></tr>
+              <tr><td colSpan={7} className="px-5 py-8 text-center text-gray-500">暂无提交记录</td></tr>
             ) : submissions.map((s) => (
               <tr key={s.id} className="border-b border-gray-800/50">
+                <td className="px-5 py-3"><input type="checkbox" checked={selectedSubmissionIds.has(s.id)} onChange={() => toggleSubmissionSelection(s.id)} /></td>
                 <td className="px-5 py-3 text-gray-300">{s.user_username}</td>
                 <td className="px-5 py-3 text-gray-100">{s.name}</td>
                 <td className="px-5 py-3 text-gray-400">{s.detected_login || "-"}</td>
@@ -390,9 +424,10 @@ export default function Accounts() {
                   {s.status === "pending" ? (
                     <div className="inline-flex items-center gap-2">
                       <button onClick={() => handleApproveSubmission(s.id)} disabled={reviewingId === s.id} className="p-1.5 rounded-md text-emerald-400 hover:bg-emerald-500/15 transition-colors"><Check className="w-4 h-4" /></button>
-                      <button onClick={() => handleRejectSubmission(s.id)} disabled={reviewingId === s.id} className="p-1.5 rounded-md text-red-400 hover:bg-red-500/15 transition-colors"><Ban className="w-4 h-4" /></button>
+                      <button onClick={() => setRejectModal({ id: s.id, note: s.review_note || "账号校验失败或不符合要求" })} disabled={reviewingId === s.id} className="p-1.5 rounded-md text-red-400 hover:bg-red-500/15 transition-colors"><Ban className="w-4 h-4" /></button>
                     </div>
                   ) : <span className="text-gray-600 text-xs">已处理</span>}
+                  <button onClick={() => handleDeleteSubmission(s.id)} className="ml-2 p-1.5 rounded-md text-gray-400 hover:text-red-400 hover:bg-red-500/15 transition-colors"><Trash2 className="w-4 h-4" /></button>
                 </td>
               </tr>
             ))}
@@ -400,7 +435,7 @@ export default function Accounts() {
         </table>
       </div>
 
-      <div className="bg-surface-800 border border-gray-800 rounded-xl overflow-hidden">
+      <div className="bg-surface-800 border border-gray-800 rounded-xl overflow-hidden order-1">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-gray-800">
@@ -514,6 +549,28 @@ export default function Accounts() {
           </tbody>
         </table>
       </div>
+
+      {rejectModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setRejectModal(null)}>
+          <div className="bg-surface-800 border border-gray-700 rounded-xl shadow-2xl p-6 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="text-lg font-semibold">填写拒绝原因</h3>
+              <button onClick={() => setRejectModal(null)} className="p-1 text-gray-500 hover:text-gray-300 transition-colors"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="space-y-4">
+              <textarea value={rejectModal.note} onChange={(e) => setRejectModal({ ...rejectModal, note: e.target.value })} rows={4}
+                className="w-full px-3 py-2 bg-surface-700 border border-gray-700 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-emerald-500/50 transition-colors"
+                placeholder="请输入拒绝原因" />
+              <div className="flex justify-end gap-3">
+                <button onClick={() => setRejectModal(null)} className="px-4 py-2 text-sm text-gray-400 hover:text-gray-200 transition-colors">取消</button>
+                <button onClick={() => handleRejectSubmission(rejectModal.id, rejectModal.note)} disabled={reviewingId === rejectModal.id || !rejectModal.note.trim()} className="px-5 py-2 bg-red-500 hover:bg-red-600 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors">
+                  {reviewingId === rejectModal.id ? "提交中..." : "确认拒绝"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {modal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={closeModal}>

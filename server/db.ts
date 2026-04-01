@@ -463,4 +463,10 @@ export const accountSubmissions = {
     )
     return db.prepare<AccountSubmissionRow, [string]>("SELECT * FROM account_submissions WHERE id = ?").get(id) ?? null
   },
+  deleteOne: (id: string) => db.run("DELETE FROM account_submissions WHERE id = ?", [id]),
+  deleteMany: (ids: string[]) => {
+    if (ids.length === 0) return
+    const placeholders = ids.map(() => "?").join(",")
+    db.run(`DELETE FROM account_submissions WHERE id IN (${placeholders})`, ids)
+  },
 }

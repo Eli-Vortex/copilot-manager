@@ -31,6 +31,11 @@ export default function Login() {
         setError(data.error || "登录失败")
         return
       }
+      const payload = JSON.parse(atob(data.token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))) as { role?: string }
+      if (payload.role !== "admin") {
+        setError("该账号不是管理员，请使用用户登录")
+        return
+      }
       localStorage.setItem("token", data.token)
       navigate("/", { replace: true })
     } catch {
@@ -58,6 +63,11 @@ export default function Login() {
         const data = await res.json() as { token?: string; error?: string }
         if (!res.ok || !data.token) {
           setError(data.error || "登录失败")
+          return
+        }
+        const payload = JSON.parse(atob(data.token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))) as { role?: string }
+        if (payload.role === "admin") {
+          setError("管理员账号请使用管理员登录")
           return
         }
         localStorage.setItem("token", data.token)
