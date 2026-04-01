@@ -4,7 +4,7 @@ import path from "node:path"
 
 import os from "node:os"
 
-import { groups, accounts, dashboard, accountSubmissions } from "./db"
+import { groups, accounts, dashboard, accountSubmissions, emailsDb } from "./db"
 import {
   startInstance,
   stopInstance,
@@ -377,7 +377,11 @@ api.post("/system/update", async (c) => {
       return c.json({ ok: false, error: "build failed", log: updateLog })
     }
 
-    updateLog.push("=== Step 4/4: Restarting service ===")
+    updateLog.push("=== Step 4/5: Clearing cached emails ===")
+    emailsDb.clearAll()
+    updateLog.push("Cached emails cleared")
+
+    updateLog.push("=== Step 5/5: Restarting service ===")
     updateLog.push("Service will restart in 2 seconds...")
 
     setTimeout(() => {
