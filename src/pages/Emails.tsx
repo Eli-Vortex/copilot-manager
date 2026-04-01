@@ -225,7 +225,7 @@ export default function Emails() {
               <div className="border-t border-gray-800 pt-4">
                 {selectedEmail.body_html ? (
                   <iframe
-                    sandbox="allow-same-origin allow-popups"
+                    sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation"
                    srcDoc={`<base target="_blank"><style>body{margin:0;font-family:sans-serif}</style>${selectedEmail.body_html}`}
                     className="w-full"
                     style={{ height: "500px", border: "none" }}

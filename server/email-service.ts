@@ -38,14 +38,14 @@ export async function fetchAndStoreEmails(
     let newCount = 0
 
     try {
-      const mailbox = client.mailbox
-      if (!mailbox) return 0
+      const since = new Date()
+      since.setDate(since.getDate() - 30)
 
-      const total = typeof mailbox.exists === "number" ? mailbox.exists : 0
-      if (total === 0) return 0
+      const uids = await client.search({ since }, { uid: true })
+      if (uids.length === 0) return 0
 
-      const rangeStart = Math.max(1, total - limit + 1)
-      const seqRange = `${rangeStart}:${total}`
+      const recentUids = uids.slice(-limit)
+      const uidRange = recentUids.join(",")
 
       const fetched: Array<{
         uid: number
@@ -57,13 +57,17 @@ export async function fetchAndStoreEmails(
         date: string
       }> = []
 
-      for await (const msg of client.fetch(seqRange, { envelope: true })) {
+      for await (const msg of client.fetch(uidRange, {
+        envelope: true,
+        source: true,
+        uid: true,
+      })) {
         if (!msg.envelope) continue
 
         const envelope = msg.envelope
         fetched.push({
           uid: msg.uid,
-          messageId: envelope.messageId ?? `${account.id}-${msg.seq}`,
+          messageId: envelope.messageId ?? `${account.id}-${msg.uid}`,
           subject: envelope.subject || "(no subject)",
           fromName: envelope.from?.[0]?.name || "",
           fromAddress: envelope.from?.[0]?.address || "",
