@@ -1,4 +1,5 @@
 import { ImapFlow } from "imapflow"
+import { simpleParser } from "mailparser"
 import { emailAccounts, emailsDb, type EmailAccountRow } from "./db"
 
 export async function testConnection(account: EmailAccountRow): Promise<{ ok: boolean; error?: string }> {
@@ -18,47 +19,10 @@ export async function testConnection(account: EmailAccountRow): Promise<{ ok: bo
   }
 }
 
-function extractBodyFromSource(source: Buffer): { text: string; html: string } {
-  const raw = source.toString("utf8")
-  const separatorIndex = raw.indexOf("\r\n\r\n")
-  if (separatorIndex === -1) return { text: "", html: "" }
-
-  const rawBody = raw.slice(separatorIndex + 4).trim()
-  const looksLikeHtml = /<html|<body|<div|<p[^>]/i.test(rawBody)
-
-  return looksLikeHtml ? { text: "", html: rawBody } : { text: rawBody, html: "" }
-}
-
-function extractBody(bodyStructure: Record<string, unknown>, source: Buffer): { text: string; html: string } {
-  let text = ""
-  let html = ""
-
-  function walkParts(part: Record<string, unknown>): void {
-    if (!part) return
-    if (part.type === "text") {
-      const charset = ((part.parameters as Record<string, string>)?.charset ?? "utf-8") as string
-      const encoding: BufferEncoding = charset.toLowerCase() === "utf-8" ? "utf8" : "latin1"
-      const raw = source.toString(encoding)
-      const bodyStart = raw.indexOf("\r\n\r\n")
-      const body = bodyStart !== -1 ? raw.slice(bodyStart + 4).trim() : ""
-
-      if (part.subtype === "plain" && !text) text = body
-      else if (part.subtype === "html" && !html) html = body
-    }
-    if (Array.isArray(part.childNodes)) {
-      for (const child of part.childNodes as Record<string, unknown>[]) walkParts(child)
-    }
-  }
-
-  walkParts(bodyStructure)
-
-  return !text && !html ? extractBodyFromSource(source) : { text, html }
-}
-
 export async function fetchAndStoreEmails(
   account: EmailAccountRow,
   folder = "INBOX",
-  limit = 50
+  limit = 30
 ): Promise<number> {
   const client = new ImapFlow({
     host: account.imap_host,
@@ -96,19 +60,23 @@ export async function fetchAndStoreEmails(
 
       for await (const msg of client.fetch(seqRange, {
         envelope: true,
-        bodyStructure: true,
         source: true,
       })) {
         if (!msg.envelope || !msg.source) continue
 
         const envelope = msg.envelope
-        const { text, html } = extractBody(msg.bodyStructure, msg.source)
+        const parsed = await simpleParser(msg.source)
+        const text = parsed.text || ""
+        const html = parsed.html || ""
+        const subject = parsed.subject || envelope.subject || "(no subject)"
+        const fromName = parsed.from?.value?.[0]?.name || envelope.from?.[0]?.name || ""
+        const fromAddress = parsed.from?.value?.[0]?.address || envelope.from?.[0]?.address || ""
 
         fetched.push({
           messageId: envelope.messageId ?? `${account.id}-${msg.seq}`,
-          subject: envelope.subject ?? "(no subject)",
-          fromName: envelope.from?.[0]?.name ?? "",
-          fromAddress: envelope.from?.[0]?.address ?? "",
+          subject,
+          fromName,
+          fromAddress,
           toAddress: envelope.to?.[0]?.address ?? "",
           date: envelope.date ? new Date(envelope.date).toISOString() : new Date().toISOString(),
           text,

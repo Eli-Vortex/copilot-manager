@@ -257,7 +257,7 @@ export default function EmailAccounts() {
                   placeholder={modal === "edit" ? "留空不修改密码" : "请输入密码或授权码"}
                   className="w-full px-3 py-2 bg-surface-700 border border-gray-700 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/30 transition-colors"
                 />
-                <p className="text-xs text-gray-500 mt-1">QQ/163/126邮箱请使用授权码</p>
+                <p className="text-xs text-gray-500 mt-1">QQ/163/126邮箱请使用授权码，Gmail请使用应用专用密码</p>
               </div>
 
               <div>

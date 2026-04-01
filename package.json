@@ -19,6 +19,7 @@
     "hono": "^4.9.9",
     "imapflow": "^1.2.18",
     "lucide-react": "^0.513.0",
+    "mailparser": "^3.9.6",
     "proxy-from-env": "^1.1.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
@@ -31,6 +32,7 @@
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.11",
     "@types/bun": "^1.2.23",
+    "@types/mailparser": "^3.4.6",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.5.2",
