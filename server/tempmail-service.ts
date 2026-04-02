@@ -64,8 +64,8 @@ export async function refreshTempInbox(inboxId: string): Promise<TempmailRefresh
   if (!res.ok) {
     throw new Error(`tempmail.lol refresh failed: HTTP ${res.status}`)
   }
-  type EmailEntry = { from: string; subject: string; body?: string; html?: string; date?: number | string }
-  const data = await res.json() as { emails?: EmailEntry[]; email?: EmailEntry[] } | null
+  type EmailEntry = { from: string; to?: string; subject: string; body?: string; html?: string | null; date?: number | string }
+  const data = await res.json() as EmailEntry[] | { emails?: EmailEntry[]; email?: EmailEntry[] } | null
   if (data === null || data === undefined || (typeof data === "object" && !Array.isArray(data) && Object.keys(data).length === 0)) {
     tempInboxes.updateStatus(inboxId, "expired")
     return {
@@ -74,7 +74,7 @@ export async function refreshTempInbox(inboxId: string): Promise<TempmailRefresh
       expired: true,
     }
   }
-  const emailList: EmailEntry[] = data.emails ?? data.email ?? []
+  const emailList: EmailEntry[] = Array.isArray(data) ? data : (data.emails ?? data.email ?? [])
   for (const email of emailList) {
     const messageKey = email.date != null
       ? String(email.date)
@@ -91,6 +91,7 @@ export async function refreshTempInbox(inboxId: string): Promise<TempmailRefresh
       subject: email.subject,
       text_body: email.body ?? "",
       html_body: email.html ?? "",
+      is_read: 0,
       received_at: receivedAt,
     })
   }

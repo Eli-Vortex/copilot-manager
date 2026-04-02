@@ -510,11 +510,13 @@ db.run(`
     subject TEXT DEFAULT '',
     text_body TEXT DEFAULT '',
     html_body TEXT DEFAULT '',
+    is_read INTEGER DEFAULT 0,
     received_at TEXT DEFAULT '',
     created_at TEXT DEFAULT (datetime('now')),
     UNIQUE(inbox_id, message_key)
   )
 `)
+try { db.run("ALTER TABLE temp_emails ADD COLUMN is_read INTEGER DEFAULT 0") } catch { void 0 }
 
 db.run(`
   CREATE TABLE IF NOT EXISTS operation_logs (
@@ -553,6 +555,7 @@ export interface TempEmailRow {
   subject: string
   text_body: string
   html_body: string
+  is_read: number
   received_at: string
   created_at: string
 }
@@ -587,19 +590,25 @@ export const tempInboxes = {
 
 export const tempEmailsDb = {
   listByInbox: (inboxId: string) => db.prepare<TempEmailRow, [string]>("SELECT * FROM temp_emails WHERE inbox_id = ? ORDER BY received_at DESC").all(inboxId),
+  listAll: () => db.prepare<TempEmailRow, []>("SELECT * FROM temp_emails ORDER BY received_at DESC").all(),
+  get: (id: string) => db.prepare<TempEmailRow, [string]>("SELECT * FROM temp_emails WHERE id = ?").get(id) ?? null,
   upsert: (data: Omit<TempEmailRow, "id" | "created_at">) => {
     db.run(
-      `INSERT INTO temp_emails (id, inbox_id, message_key, sender, subject, text_body, html_body, received_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO temp_emails (id, inbox_id, message_key, sender, subject, text_body, html_body, is_read, received_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(inbox_id, message_key) DO UPDATE SET
          sender = excluded.sender,
          subject = excluded.subject,
          text_body = CASE WHEN excluded.text_body != '' THEN excluded.text_body ELSE temp_emails.text_body END,
          html_body = CASE WHEN excluded.html_body != '' THEN excluded.html_body ELSE temp_emails.html_body END,
+         is_read = CASE WHEN temp_emails.is_read = 1 THEN 1 ELSE excluded.is_read END,
          received_at = excluded.received_at`,
-      [randomUUID(), data.inbox_id, data.message_key, data.sender, data.subject, data.text_body, data.html_body, data.received_at]
+      [randomUUID(), data.inbox_id, data.message_key, data.sender, data.subject, data.text_body, data.html_body, data.is_read, data.received_at]
     )
   },
+  markRead: (id: string) => db.run("UPDATE temp_emails SET is_read = 1 WHERE id = ?", [id]),
+  markAllRead: () => db.run("UPDATE temp_emails SET is_read = 1 WHERE is_read = 0"),
+  countUnread: () => (db.prepare<{ count: number }, []>("SELECT COUNT(*) as count FROM temp_emails WHERE is_read = 0").get()?.count ?? 0),
   deleteByInbox: (inboxId: string) => db.run("DELETE FROM temp_emails WHERE inbox_id = ?", [inboxId]),
   countAll: () => (db.prepare<{ count: number }, []>("SELECT COUNT(*) as count FROM temp_emails").get()?.count ?? 0),
 }
