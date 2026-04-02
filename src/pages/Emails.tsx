@@ -78,7 +78,7 @@ export default function Emails() {
           setAccounts(accountList)
         })
         .catch(() => {})
-    }, 10000)
+    }, 5000)
     return () => clearInterval(timer)
   }, [loadEmails])
 

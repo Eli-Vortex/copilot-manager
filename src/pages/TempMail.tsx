@@ -77,11 +77,23 @@ export default function TempMail() {
 
   const loadRef = useRef(load)
   loadRef.current = load
+  const emailModalRef = useRef(emailModal)
+  emailModalRef.current = emailModal
   useEffect(() => {
     const timer = setInterval(() => {
       loadRef.current()
+      const activeModal = emailModalRef.current
+      if (activeModal) {
+        api.tempmail.listEmails(activeModal.inbox.id)
+          .then((data) => {
+            setEmailModal((prev) => prev && prev.inbox.id === activeModal.inbox.id
+              ? { ...prev, emails: data.emails, selected: prev.selected ? data.emails.find((e) => e.id === prev.selected?.id) ?? prev.selected : prev.selected }
+              : prev)
+          })
+          .catch(() => undefined)
+      }
       setTick((t) => t + 1)
-    }, 15000)
+    }, 5000)
     return () => clearInterval(timer)
   }, [])
 

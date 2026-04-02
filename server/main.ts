@@ -118,6 +118,15 @@ export async function runScheduledEmailSync() {
   }
 }
 
+export async function runScheduledTempmailSync() {
+  const { refreshAllActiveTempInboxes } = await import("./tempmail-service")
+  try {
+    await refreshAllActiveTempInboxes()
+  } catch {
+    void 0
+  }
+}
+
 export function runOperationLogRetention(retentionDays = 90) {
   logSystemAction("system.log_retention_cleanup", "scheduler", "", { retention_days: retentionDays })
   operationLogs.deleteOlderThan(retentionDays)
@@ -130,7 +139,11 @@ if (process.env.NODE_ENV !== "test") {
 
   setInterval(async () => {
     await runScheduledEmailSync()
-  }, 5 * 60 * 1000)
+  }, 60 * 1000)
+
+  setInterval(async () => {
+    await runScheduledTempmailSync()
+  }, 5 * 1000)
 
   setInterval(() => {
     runOperationLogRetention(90)
