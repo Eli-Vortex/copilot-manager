@@ -418,6 +418,7 @@ export const emailsDb = {
               date = excluded.date,
               body_text = CASE WHEN excluded.body_text != '' THEN excluded.body_text ELSE emails.body_text END,
               body_html = CASE WHEN excluded.body_html != '' THEN excluded.body_html ELSE emails.body_html END,
+              is_read = CASE WHEN emails.is_read = 1 THEN 1 ELSE excluded.is_read END,
               folder = excluded.folder,
               uid = excluded.uid,
               source = excluded.source`,
