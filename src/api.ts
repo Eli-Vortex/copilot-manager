@@ -109,7 +109,7 @@ export interface EmailInfo {
   id: string; account_id: string; message_id: string; subject: string
   from_name: string; from_address: string; to_address: string; date: string
   body_text: string; body_html: string; is_read: number; folder: string
-  fetched_at: string; account_name?: string; account_email?: string
+  fetched_at: string; account_name?: string; account_email?: string; uid?: number | null; source: string
 }
 
 export interface TempInboxInfo {
@@ -131,6 +131,7 @@ export interface TempEmailInfo {
   subject: string
   text_body: string
   html_body: string
+  is_read: number
   received_at: string
   created_at: string
 }

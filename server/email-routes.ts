@@ -1,5 +1,5 @@
 import { Hono } from "hono"
-import { emailAccounts, emailsDb, operationLogs } from "./db"
+import { emailAccounts, emailsDb, operationLogs, tempEmailsDb, tempInboxes, type TempEmailRow, type TempInboxRow } from "./db"
 import { testConnection, fetchAndStoreEmails, fetchAllAccounts, fetchEmailBody } from "./email-service"
 
 export const emailRoutes = new Hono()
@@ -14,6 +14,38 @@ function logEmailAction(c: { get: (key: string) => unknown }, action: string, ta
     target_id,
     details_json: JSON.stringify(details),
   })
+}
+
+function toInboxEmail(tempEmail: TempEmailRow, inbox: TempInboxRow) {
+  return {
+    id: tempEmail.id,
+    account_id: `temp:${inbox.id}`,
+    message_id: tempEmail.message_key,
+    subject: tempEmail.subject,
+    from_name: "",
+    from_address: tempEmail.sender,
+    to_address: inbox.address,
+    date: tempEmail.received_at,
+    body_text: tempEmail.text_body,
+    body_html: tempEmail.html_body,
+    is_read: tempEmail.is_read,
+    folder: "INBOX",
+    fetched_at: tempEmail.created_at,
+    uid: null,
+    source: "tempmail.lol",
+    account_name: inbox.note?.trim() || "临时邮箱",
+    account_email: inbox.address,
+  }
+}
+
+function listTempInboxEmails() {
+  const inboxes = new Map(tempInboxes.list().map((inbox) => [inbox.id, inbox]))
+  return tempEmailsDb.listAll()
+    .map((email) => {
+      const inbox = inboxes.get(email.inbox_id)
+      return inbox ? toInboxEmail(email, inbox) : null
+    })
+    .filter((email): email is ReturnType<typeof toInboxEmail> => email !== null)
 }
 
 emailRoutes.get("/email-accounts", (c) => {
@@ -107,19 +139,36 @@ emailRoutes.get("/emails", (c) => {
   const unread_only = filter === "unread" || c.req.query("unread_only") === "true"
   const has_body = filter === "has_body" ? true : undefined
 
-  const emails = emailsDb.list({ account_id, limit, offset, unread_only, has_body, source })
+  const imapEmails = source === "tempmail.lol"
+    ? []
+    : emailsDb.list({ account_id, limit: limit + offset, offset: 0, unread_only, has_body, source: source === "imap" ? "imap" : undefined })
+
+  const tempEmails = account_id || source === "imap"
+    ? []
+    : listTempInboxEmails().filter((email) => {
+        if (source && source !== "tempmail.lol") return false
+        if (unread_only && email.is_read !== 0) return false
+        if (has_body && !email.body_text && !email.body_html) return false
+        return true
+      })
+
+  const emails = [...imapEmails, ...tempEmails]
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    .slice(offset, offset + limit)
+
   logEmailAction(c, "emails.list", "", { account_id: account_id ?? null, limit, offset, filter: filter ?? null, source: source ?? null, result_count: emails.length }, "email")
   return c.json(emails)
 })
 
 emailRoutes.get("/emails/unread-count", (c) => {
-  const count = emailsDb.countUnread()
+  const count = emailsDb.countUnread() + tempEmailsDb.countUnread()
   logEmailAction(c, "emails.unread_count", "", { count }, "email")
   return c.json({ count })
 })
 
 emailRoutes.post("/emails/mark-all-read", (c) => {
   emailsDb.markAllRead()
+  tempEmailsDb.markAllRead()
   logEmailAction(c, "emails.mark_all_read")
   return c.json({ ok: true })
 })
@@ -133,7 +182,15 @@ emailRoutes.post("/emails/clear", (c) => {
 emailRoutes.get("/emails/:id", async (c) => {
   const id = c.req.param("id")
   const email = emailsDb.get(id)
-  if (!email) return c.json({ error: "Email not found" }, 404)
+  if (!email) {
+    const tempEmail = tempEmailsDb.get(id)
+    if (!tempEmail) return c.json({ error: "Email not found" }, 404)
+    const inbox = tempInboxes.get(tempEmail.inbox_id)
+    if (!inbox) return c.json({ error: "Email not found" }, 404)
+    tempEmailsDb.markRead(id)
+    logEmailAction(c, "emails.read", id, { source: "tempmail.lol", inbox_id: inbox.id, body_fetched: false, marked_read: tempEmail.is_read !== 1 }, "email")
+    return c.json({ ...toInboxEmail({ ...tempEmail, is_read: 1 }, inbox), is_read: 1 })
+  }
 
   if (!email.body_text && !email.body_html && email.uid != null) {
     const account = emailAccounts.get(email.account_id)
