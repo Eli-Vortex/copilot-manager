@@ -19,7 +19,9 @@ function logTempAction(c: { get: (key: string) => unknown }, action: string, tar
 tempmailRoutes.get("/tempmail/inboxes", async (c) => {
   try {
     await cleanupExpiredTempInboxes()
-    return c.json(tempInboxes.list())
+    const inboxes = tempInboxes.list()
+    logTempAction(c, "tempmail.list", "", { count: inboxes.length })
+    return c.json(inboxes)
   } catch (e) {
     return c.json({ error: String(e) }, 500)
   }
@@ -105,7 +107,9 @@ tempmailRoutes.get("/tempmail/inboxes/:id/emails", (c) => {
     const id = c.req.param("id")
     const inbox = tempInboxes.get(id)
     if (!inbox) return c.json({ error: "Inbox not found" }, 404)
-    return c.json({ inbox, emails: tempEmailsDb.listByInbox(id) })
+    const emails = tempEmailsDb.listByInbox(id)
+    logTempAction(c, "tempmail.read", id, { email_count: emails.length })
+    return c.json({ inbox, emails })
   } catch (e) {
     return c.json({ error: String(e) }, 500)
   }

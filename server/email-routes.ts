@@ -4,20 +4,22 @@ import { testConnection, fetchAndStoreEmails, fetchAllAccounts, fetchEmailBody }
 
 export const emailRoutes = new Hono()
 
-function logEmailAction(c: { get: (key: string) => unknown }, action: string, target_id = "", details: Record<string, unknown> = {}) {
+function logEmailAction(c: { get: (key: string) => unknown }, action: string, target_id = "", details: Record<string, unknown> = {}, target_type = "email_account") {
   const user = c.get("user") as { username?: string; role?: string } | undefined
   operationLogs.create({
     actor_username: user?.username || "system",
     actor_role: user?.role || "system",
     action,
-    target_type: "email_account",
+    target_type,
     target_id,
     details_json: JSON.stringify(details),
   })
 }
 
 emailRoutes.get("/email-accounts", (c) => {
-  return c.json(emailAccounts.list())
+  const rows = emailAccounts.list()
+  logEmailAction(c, "email_account.list", "", { count: rows.length })
+  return c.json(rows)
 })
 
 emailRoutes.post("/email-accounts", async (c) => {
@@ -60,6 +62,7 @@ emailRoutes.post("/email-accounts/test", async (c) => {
   }
 
   const result = await testConnection(mockAccount)
+  logEmailAction(c, "email_account.test", "", { email, host: imap_host, ok: result.ok })
   return c.json(result)
 })
 
@@ -105,11 +108,13 @@ emailRoutes.get("/emails", (c) => {
   const has_body = filter === "has_body" ? true : undefined
 
   const emails = emailsDb.list({ account_id, limit, offset, unread_only, has_body, source })
+  logEmailAction(c, "emails.list", "", { account_id: account_id ?? null, limit, offset, filter: filter ?? null, source: source ?? null, result_count: emails.length }, "email")
   return c.json(emails)
 })
 
 emailRoutes.get("/emails/unread-count", (c) => {
   const count = emailsDb.countUnread()
+  logEmailAction(c, "emails.unread_count", "", { count }, "email")
   return c.json({ count })
 })
 
@@ -137,12 +142,14 @@ emailRoutes.get("/emails/:id", async (c) => {
       const updated = emailsDb.get(id)
       if (updated) {
         emailsDb.markRead(id)
+        logEmailAction(c, "emails.read", id, { account_id: updated.account_id, source: updated.source, body_fetched: true, marked_read: updated.is_read !== 1 }, "email")
         return c.json({ ...updated, is_read: 1 })
       }
     }
   }
 
   emailsDb.markRead(id)
+  logEmailAction(c, "emails.read", id, { account_id: email.account_id, source: email.source, body_fetched: false, marked_read: email.is_read !== 1 }, "email")
   return c.json({ ...email, is_read: 1 })
 })
 
