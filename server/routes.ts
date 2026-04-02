@@ -72,15 +72,20 @@ api.post("/auth/device-code", async (c) => {
   if (!res.ok) return c.json({ error: "Failed to get device code from GitHub" }, 502)
   const data = await res.json() as { device_code: string; user_code: string; verification_uri: string; expires_in: number; interval: number }
   pendingFlows.set(data.device_code, { device_code: data.device_code, interval: data.interval, expires_at: Date.now() + data.expires_in * 1000 })
+  logAction(c, "auth.device_code_start", "auth", "", { interval: data.interval, expires_in: data.expires_in })
   return c.json({ device_code: data.device_code, user_code: data.user_code, verification_uri: data.verification_uri, interval: data.interval })
 })
 
 api.post("/auth/poll", async (c) => {
   const { device_code } = await c.req.json<{ device_code: string }>()
   const flow = pendingFlows.get(device_code)
-  if (!flow) return c.json({ error: "Unknown device code" }, 400)
+  if (!flow) {
+    logAction(c, "auth.device_code_poll_unknown", "auth")
+    return c.json({ error: "Unknown device code" }, 400)
+  }
   if (Date.now() > flow.expires_at) {
     pendingFlows.delete(device_code)
+    logAction(c, "auth.device_code_expired", "auth")
     return c.json({ status: "expired" })
   }
 
@@ -89,7 +94,10 @@ api.post("/auth/poll", async (c) => {
     headers: oauthHeaders,
     body: JSON.stringify({ client_id: GITHUB_CLIENT_ID, device_code, grant_type: "urn:ietf:params:oauth:grant-type:device_code" }),
   })
-  if (!res.ok) return c.json({ status: "pending" })
+  if (!res.ok) {
+    logAction(c, "auth.device_code_poll", "auth", "", { status: "pending" })
+    return c.json({ status: "pending" })
+  }
   const data = await res.json() as { access_token?: string; error?: string }
 
   if (data.access_token) {
@@ -104,9 +112,11 @@ api.post("/auth/poll", async (c) => {
         username = user.login
       }
     } catch {}
+    logAction(c, "auth.device_code_complete", "auth", "", { username })
     return c.json({ status: "complete", access_token: data.access_token, username })
   }
 
+  logAction(c, "auth.device_code_poll", "auth", "", { status: data.error || "pending" })
   return c.json({ status: "pending" })
 })
 
@@ -123,6 +133,7 @@ api.get("/dashboard", (c) => {
     uptime: Math.floor(process.uptime()),
     hostname: os.hostname(),
   }
+  logAction(c, "dashboard.view", "dashboard", "", { total_groups: summary.totalGroups, total_accounts: summary.totalAccounts })
   return c.json({ ...summary, runningInstances: runningCount, instanceStatuses: statuses, groupNames: groupNameMap, systemInfo })
 })
 
@@ -132,6 +143,7 @@ api.get("/groups", (c) => {
     ...g,
     instance: getInstanceStatus(g.id),
   }))
+  logAction(c, "group.list", "group", "", { count: enriched.length })
   return c.json(enriched)
 })
 
@@ -199,16 +211,25 @@ api.post("/groups/:id/restart", (c) => {
 })
 
 api.get("/groups/:id/status", (c) => {
-  return c.json(getInstanceStatus(c.req.param("id")))
+  const id = c.req.param("id")
+  const status = getInstanceStatus(id)
+  logAction(c, "group.status", "group", id, { status: status.status, port: status.port })
+  return c.json(status)
 })
 
 api.get("/groups/:id/logs", (c) => {
+  const id = c.req.param("id")
   const lines = Number(c.req.query("lines")) || 100
-  return c.json({ logs: getInstanceLogs(c.req.param("id"), lines) })
+  const logs = getInstanceLogs(id, lines)
+  logAction(c, "group.logs", "group", id, { requested_lines: lines, returned_lines: logs.length })
+  return c.json({ logs })
 })
 
 api.get("/groups/:id/accounts", (c) => {
-  return c.json(groups.getAccounts(c.req.param("id")))
+  const id = c.req.param("id")
+  const rows = groups.getAccounts(id)
+  logAction(c, "group.accounts", "group", id, { count: rows.length })
+  return c.json(rows)
 })
 
 api.get("/copilot-status-all", async (c) => {
@@ -228,6 +249,7 @@ api.get("/copilot-status-all", async (c) => {
       } catch {}
     })
   await Promise.all(fetches)
+  logAction(c, "copilot.status_all", "copilot", "", { groups_checked: allGroups.length, accounts_found: Object.keys(results).length })
   return c.json(results)
 })
 
@@ -241,6 +263,7 @@ api.get("/groups/:id/copilot-status", async (c) => {
     const res = await fetch(`http://127.0.0.1:${group.port}/accounts/status`, { signal: AbortSignal.timeout(10000) })
     if (!res.ok) return c.json({ error: `Upstream returned ${res.status}` }, 502)
     const data = await res.json()
+    logAction(c, "copilot.status", "group", id, { port: group.port })
     return c.json(data)
   } catch (err: unknown) {
     return c.json({ error: err instanceof Error ? err.message : "Failed to fetch" }, 502)
@@ -257,6 +280,7 @@ api.get("/groups/:id/copilot-models", async (c) => {
     const res = await fetch(`http://127.0.0.1:${group.port}/v1/models`, { signal: AbortSignal.timeout(10000) })
     if (!res.ok) return c.json({ error: `Upstream returned ${res.status}` }, 502)
     const data = await res.json()
+    logAction(c, "copilot.models", "group", id, { port: group.port })
     return c.json(data)
   } catch (err: unknown) {
     return c.json({ error: err instanceof Error ? err.message : "Failed to fetch" }, 502)
@@ -264,7 +288,9 @@ api.get("/groups/:id/copilot-models", async (c) => {
 })
 
 api.get("/accounts", (c) => {
-  return c.json(accounts.list())
+  const rows = accounts.list()
+  logAction(c, "account.list", "account", "", { count: rows.length })
+  return c.json(rows)
 })
 
 api.post("/accounts", async (c) => {
@@ -352,6 +378,7 @@ api.get("/system/info", async (c) => {
     const r = await runCommand("git", ["remote", "get-url", "origin"], PROJECT_ROOT)
     gitRemote = r.output.trim()
   } catch {}
+  logAction(c, "system.info", "system", "", { version: PKG_VERSION, update_running: updateRunning })
   return c.json({ version: PKG_VERSION, gitBranch, gitHash, gitMessage, gitTime, gitRemote, updateRunning })
 })
 
@@ -361,8 +388,10 @@ api.post("/system/check-update", async (c) => {
     const diff = await runCommand("git", ["log", "HEAD..origin/master", "--oneline"], PROJECT_ROOT)
     const commits = diff.output.trim().split("\n").filter((l) => l.trim())
     const behind = commits.length
+    logAction(c, "system.check_update", "system", "", { behind, commit_count: commits.length })
     return c.json({ behind, commits: commits.slice(0, 10) })
   } catch {
+    logAction(c, "system.check_update", "system", "", { behind: 0, failed: true })
     return c.json({ behind: 0, commits: [] })
   }
 })
@@ -371,6 +400,7 @@ api.post("/system/update", async (c) => {
   if (updateRunning) return c.json({ error: "Update already in progress" }, 409)
   updateRunning = true
   updateLog = []
+  logAction(c, "system.update", "system", "", { version: PKG_VERSION })
 
   try {
     updateLog.push("=== Step 0/4: Stopping all instances ===")
@@ -398,9 +428,8 @@ api.post("/system/update", async (c) => {
       return c.json({ ok: false, error: "build failed", log: updateLog })
     }
 
-    updateLog.push("=== Step 4/5: Clearing cached emails ===")
-    emailsDb.clearAll()
-    updateLog.push("Cached emails cleared")
+    updateLog.push("=== Step 4/5: Preserving IMAP email state ===")
+    updateLog.push("Cached IMAP emails kept to preserve read/unread state")
 
     updateLog.push("=== Step 5/5: Restarting service ===")
     updateLog.push("Service will restart in 2 seconds...")
@@ -419,6 +448,7 @@ api.post("/system/update", async (c) => {
 })
 
 api.get("/system/update-log", (c) => {
+  logAction(c, "system.update_log", "system", "", { line_count: updateLog.length, running: updateRunning })
   return c.json({ log: updateLog, running: updateRunning })
 })
 
@@ -451,13 +481,16 @@ userApi.post("/accounts/submit", async (c) => {
 userApi.get("/account-submissions/me", (c) => {
   const user = c.get("user") as { sub?: string }
   if (!user?.sub) return c.json({ error: "Unauthorized" }, 401)
-  return c.json(accountSubmissions.listByUser(user.sub))
+  const rows = accountSubmissions.listByUser(user.sub)
+  logAction(c, "submission.list_mine", "account_submission", "", { count: rows.length })
+  return c.json(rows)
 })
 
 userApi.post("/account-submissions/validate", async (c) => {
   const body = await c.req.json<{ github_token: string }>()
   if (!body.github_token?.trim()) return c.json({ error: "github_token is required" }, 400)
   const result = await validateGithubCopilotToken(body.github_token.trim())
+  logAction(c, "submission.validate", "account_submission", "", { ok: result.ok, login: result.ok ? (result.login || "") : "" })
   return c.json(result, result.ok ? 200 : 400)
 })
 
@@ -476,6 +509,7 @@ api.get("/account-submissions", (c) => {
   let rows = accountSubmissions.listAll()
   if (q) rows = rows.filter((r) => [r.user_username, r.name, r.detected_login, r.user_note].join(" ").toLowerCase().includes(q))
   if (status) rows = rows.filter((r) => r.status === status)
+  logAction(c, "submission.list", "account_submission", "", { count: rows.length, q: q || null, status: status || null })
   return c.json(rows)
 })
 
@@ -512,17 +546,21 @@ api.get("/system/ops-stats", (c) => {
   const path = require("node:path")
   const dbPath = path.join(process.cwd(), "data", "manager.db")
   const sizeBytes = fs.existsSync(dbPath) ? fs.statSync(dbPath).size : 0
-  return c.json({
+  const stats = {
     operationLogCount: operationLogs.countAll(),
     imapEmailCount: emailsDb.countAll ? emailsDb.countAll() : 0,
     tempEmailCount: tempEmailsDb.countAll(),
     dbSizeBytes: sizeBytes,
-  })
+  }
+  logAction(c, "system.ops_stats", "system", "", { operation_log_count: stats.operationLogCount })
+  return c.json(stats)
 })
 
 api.get("/system/operation-logs", (c) => {
   const limit = Number(c.req.query("limit") || 100)
-  return c.json(operationLogs.list(limit))
+  const rows = operationLogs.list(limit)
+  logAction(c, "system.operation_logs", "system", "", { limit, result_count: rows.length })
+  return c.json(rows)
 })
 
 api.delete("/account-submissions/:id", (c) => {

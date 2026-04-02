@@ -2,9 +2,25 @@ import { Hono } from "hono"
 import { createHash, randomBytes, randomUUID } from "node:crypto"
 import type { Context, Next } from "hono"
 
-import { db, hashPassword, verifyPassword, JWT_SECRET } from "./db"
+import { db, hashPassword, verifyPassword, JWT_SECRET, operationLogs } from "./db"
 
 export const authRoutes = new Hono()
+
+function logAuthOperation(action: string, details: Record<string, unknown>): void {
+  try {
+    const actorUsername = typeof details.username === "string" ? details.username : "anonymous"
+    const actorRole = typeof details.role === "string" ? details.role : "auth"
+    operationLogs.create({
+      actor_username: actorUsername,
+      actor_role: actorRole,
+      action,
+      target_type: "auth",
+      target_id: "",
+      details_json: JSON.stringify(details),
+    })
+  } catch {
+  }
+}
 
 function signJwt(payload: Record<string, unknown>): string {
   const header = Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64url")
@@ -55,11 +71,13 @@ authRoutes.post("/login", async (c) => {
   ).get(username)
 
   if (!user || !verifyPassword(password, user.password_hash)) {
+    logAuthOperation("auth.login_failed", { username, reason: "invalid_credentials" })
     return c.json({ error: "用户名或密码错误" }, 401)
   }
 
   const role = user.role || "admin"
   const token = signJwt({ sub: user.id, username: user.username, role })
+  logAuthOperation("auth.login", { username, role })
   return c.json({ token, username: user.username, role })
 })
 
@@ -76,12 +94,14 @@ authRoutes.post("/register", async (c) => {
     [id, username, hashPassword(password)])
 
   const token = signJwt({ sub: id, username, role: "user" })
+  logAuthOperation("auth.register", { username, role: "user" })
   return c.json({ token, username, role: "user" })
 })
 
 authRoutes.get("/me", (c) => {
   const user = getUserFromRequest(c)
   if (!user) return c.json({ error: "Unauthorized" }, 401)
+  logAuthOperation("auth.me", { username: user.username, role: user.role })
   return c.json({ username: user.username, role: user.role })
 })
 
@@ -98,9 +118,11 @@ authRoutes.post("/change-password", async (c) => {
   ).get(user.sub)
 
   if (!admin || !verifyPassword(oldPassword, admin.password_hash)) {
+    logAuthOperation("auth.change_password_failed", { username: user.username, reason: "invalid_old_password" })
     return c.json({ error: "旧密码错误" }, 401)
   }
 
   db.run("UPDATE admin SET password_hash = ? WHERE id = ?", [hashPassword(newPassword), user.sub])
+  logAuthOperation("auth.change_password", { username: user.username })
   return c.json({ ok: true })
 })

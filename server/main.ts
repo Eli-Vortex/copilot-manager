@@ -6,7 +6,7 @@ import { cors } from "hono/cors"
 
 import { api, userApi } from "./routes"
 import { authRoutes, verifyJwt, requireAdmin } from "./auth"
-import { groups } from "./db"
+import { groups, operationLogs } from "./db"
 import { startInstance } from "./process-manager"
 import { emailRoutes } from "./email-routes"
 import { tempmailRoutes } from "./tempmail-routes"
@@ -28,7 +28,6 @@ const MIME: Record<string, string> = {
 
 app.use(cors())
 
-// Health endpoint — no auth required, used for post-update polling
 app.get("/api/health", (c) => c.json({ ok: true, ts: Date.now() }))
 
 app.route("/api/auth", authRoutes)
@@ -69,14 +68,12 @@ if (fs.existsSync(distDir)) {
     if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
       const ext = path.extname(filePath)
       const headers: Record<string, string> = { "Content-Type": MIME[ext] || "application/octet-stream" }
-      // Hashed assets (Vite build output) can be cached indefinitely
       if (reqPath.match(/\.[a-f0-9]{8,}\.(js|css)$/)) {
         headers["Cache-Control"] = "public, max-age=31536000, immutable"
       }
       return new Response(Bun.file(filePath), { headers })
     }
 
-    // index.html must never be cached — ensures users always get the latest build
     return new Response(Bun.file(path.join(distDir, "index.html")), {
       headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache, no-store, must-revalidate" },
     })
@@ -87,21 +84,58 @@ const port = Number(process.env.MANAGER_PORT) || 3000
 
 console.log(`Copilot Manager running at http://localhost:${port}`)
 
-setTimeout(() => {
+function logSystemAction(action: string, target_type: string, target_id = "", details: Record<string, unknown> = {}) {
+  operationLogs.create({
+    actor_username: "system",
+    actor_role: "system",
+    action,
+    target_type,
+    target_id,
+    details_json: JSON.stringify(details),
+  })
+}
+
+export function runAutoStartScan() {
   const allGroups = groups.list()
   const autoGroups = allGroups.filter((g) => Number(g.auto_start) === 1)
   console.log(`[auto-start] Found ${allGroups.length} groups, ${autoGroups.length} marked auto-start`)
+  logSystemAction("system.auto_start_scan", "scheduler", "", { total_groups: allGroups.length, auto_start_count: autoGroups.length })
   for (const g of autoGroups) {
     console.log(`[auto-start] Starting: ${g.name} (port ${g.port})`)
     const result = startInstance(g.id)
     console.log(`[auto-start] ${g.name}: ${result.ok ? "ok" : result.error}`)
+    logSystemAction("system.auto_start_group", "group", g.id, { group_name: g.name, port: g.port, success: result.ok, error: result.ok ? null : result.error })
   }
-}, 3000)
+}
 
-setInterval(async () => {
+export async function runScheduledEmailSync() {
   const { fetchAllAccounts } = await import("./email-service")
-  fetchAllAccounts().catch(() => undefined)
-}, 5 * 60 * 1000)
+  try {
+    await fetchAllAccounts()
+    logSystemAction("system.email_sync", "scheduler", "", { status: "success" })
+  } catch (error) {
+    logSystemAction("system.email_sync_failed", "scheduler", "", { error: error instanceof Error ? error.message : String(error) })
+  }
+}
+
+export function runOperationLogRetention(retentionDays = 90) {
+  logSystemAction("system.log_retention_cleanup", "scheduler", "", { retention_days: retentionDays })
+  operationLogs.deleteOlderThan(retentionDays)
+}
+
+if (process.env.NODE_ENV !== "test") {
+  setTimeout(() => {
+    runAutoStartScan()
+  }, 3000)
+
+  setInterval(async () => {
+    await runScheduledEmailSync()
+  }, 5 * 60 * 1000)
+
+  setInterval(() => {
+    runOperationLogRetention(90)
+  }, 24 * 60 * 60 * 1000)
+}
 
 export default {
   port,
