@@ -142,13 +142,15 @@ export async function cleanupExpiredTempInboxes(): Promise<number> {
       deleted++
     }
   }
-  operationLogs.create({
-    actor_username: "system",
-    actor_role: "system",
-    action: "tempmail.cleanup",
-    target_type: "temp_inbox",
-    target_id: "",
-    details_json: JSON.stringify({ deleted }),
-  })
+  if (deleted > 0) {
+    operationLogs.create({
+      actor_username: "system",
+      actor_role: "system",
+      action: "tempmail.cleanup",
+      target_type: "temp_inbox",
+      target_id: "",
+      details_json: JSON.stringify({ deleted }),
+    })
+  }
   return deleted
 }

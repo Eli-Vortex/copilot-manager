@@ -29,9 +29,26 @@ tempmailRoutes.post("/tempmail/inboxes", async (c) => {
   try {
     const body = await c.req.json().catch(() => ({} as Record<string, unknown>))
     const note = typeof body?.note === "string" ? body.note : undefined
-    const inbox = await createTempInbox(note)
-    logTempAction(c, "tempmail.create", inbox.id, { address: inbox.address })
-    return c.json(inbox, 201)
+    const count = Math.min(Math.max(Number(body?.count) || 1, 1), 20)
+
+    if (count === 1) {
+      const inbox = await createTempInbox(note)
+      logTempAction(c, "tempmail.create", inbox.id, { address: inbox.address })
+      return c.json(inbox, 201)
+    }
+
+    const results: Awaited<ReturnType<typeof createTempInbox>>[] = []
+    const errors: string[] = []
+    for (let i = 0; i < count; i++) {
+      try {
+        const inbox = await createTempInbox(note ? `${note} #${i + 1}` : undefined)
+        results.push(inbox)
+      } catch (e) {
+        errors.push(String(e))
+      }
+    }
+    logTempAction(c, "tempmail.batch_create", "", { count: results.length, errors: errors.length })
+    return c.json({ created: results, errors }, 201)
   } catch (e) {
     return c.json({ error: String(e) }, 500)
   }

@@ -252,7 +252,12 @@ export const api = {
 
   tempmail: {
     listInboxes: () => request<TempInboxInfo[]>("/tempmail/inboxes"),
-    createInbox: (note?: string) => request<TempInboxInfo>("/tempmail/inboxes", { method: "POST", body: JSON.stringify({ note }) }),
+    createInbox: (note?: string, count?: number) => {
+      if (count && count > 1) {
+        return request<{ created: TempInboxInfo[]; errors: string[] }>("/tempmail/inboxes", { method: "POST", body: JSON.stringify({ note, count }) })
+      }
+      return request<TempInboxInfo>("/tempmail/inboxes", { method: "POST", body: JSON.stringify({ note }) })
+    },
     updateNote: (id: string, note: string) => request<TempInboxInfo>(`/tempmail/inboxes/${id}/note`, { method: "PATCH", body: JSON.stringify({ note }) }),
     deleteInbox: (id: string) => request<{ ok: boolean }>(`/tempmail/inboxes/${id}`, { method: "DELETE" }),
     refreshInbox: (id: string) => request<{ inbox: TempInboxInfo | null; emails: TempEmailInfo[]; expired: boolean }>(`/tempmail/inboxes/${id}/refresh`, { method: "POST" }),

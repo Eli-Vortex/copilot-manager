@@ -15,16 +15,8 @@ export default function System() {
   const [pw, setPw] = useState({ old: "", new: "", confirm: "" })
   const [pwMsg, setPwMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [pwSaving, setPwSaving] = useState(false)
-  const [opsStats, setOpsStats] = useState<{ operationLogCount: number; imapEmailCount: number; tempEmailCount: number; dbSizeBytes: number } | null>(null)
-  const [opLogs, setOpLogs] = useState<Array<{ id: string; actor_username: string; actor_role: string; action: string; target_type: string; target_id: string; details_json: string; created_at: string }>>([])
 
-  const loadInfo = () => {
-    api.system.info().then(setInfo).catch(() => {})
-    api.system.opsStats().then(setOpsStats).catch(() => {})
-    api.system.operationLogs(50).then(setOpLogs).catch(() => {})
-  }
-
-  useEffect(() => { loadInfo() }, [])
+  useEffect(() => { api.system.info().then(setInfo).catch(() => {}) }, [])
 
   const doCheck = async () => {
     setCheckState("checking")
@@ -224,36 +216,6 @@ export default function System() {
           className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors">
           {pwSaving ? "保存中..." : "修改密码"}
         </button>
-      </div>
-
-      <div className="bg-surface-800 border border-gray-800 rounded-xl p-6 space-y-4">
-        <h2 className="text-lg font-semibold">运维信息</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="bg-surface-700 rounded-lg px-4 py-3">
-            <div className="text-xs text-gray-500">操作日志数</div>
-            <div className="text-lg font-semibold mt-1">{opsStats?.operationLogCount ?? "-"}</div>
-          </div>
-          <div className="bg-surface-700 rounded-lg px-4 py-3">
-            <div className="text-xs text-gray-500">邮件缓存</div>
-            <div className="text-sm text-gray-300 mt-1">IMAP {opsStats?.imapEmailCount ?? "-"} / Temp {opsStats?.tempEmailCount ?? "-"}</div>
-          </div>
-          <div className="bg-surface-700 rounded-lg px-4 py-3">
-            <div className="text-xs text-gray-500">数据库大小</div>
-            <div className="text-sm text-gray-300 mt-1">{opsStats ? `${(opsStats.dbSizeBytes / 1024 / 1024).toFixed(2)} MB` : "-"}</div>
-          </div>
-        </div>
-        <div className="bg-surface-950 rounded-xl p-4 max-h-[320px] overflow-y-auto border border-gray-800">
-          <div className="text-sm font-medium mb-3 text-gray-200">最近操作日志</div>
-          {opLogs.length === 0 ? (
-            <div className="text-sm text-gray-500">暂无操作日志</div>
-          ) : opLogs.map((log) => (
-            <div key={log.id} className="border-b border-gray-800/60 py-2 last:border-0">
-              <div className="text-xs text-gray-500">{new Date(log.created_at).toLocaleString("zh-CN")}</div>
-              <div className="text-sm text-gray-300 mt-0.5">{log.actor_username || "system"} · {log.action}</div>
-              <div className="text-xs text-gray-600 mt-0.5">{log.target_type}{log.target_id ? ` / ${log.target_id}` : ""}</div>
-            </div>
-          ))}
-        </div>
       </div>
     </div>
   )

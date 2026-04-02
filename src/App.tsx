@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react"
 import { BrowserRouter, Routes, Route, NavLink, Navigate, useNavigate } from "react-router-dom"
-import { LayoutDashboard, FolderCog, Users, Zap, Settings, LogOut, Sun, Moon, MailOpen, Mail, Upload, MailPlus, Inbox } from "lucide-react"
+import { LayoutDashboard, FolderCog, Users, Zap, Settings, LogOut, Sun, Moon, MailOpen, Mail, Upload, MailPlus } from "lucide-react"
 
 import Dashboard from "./pages/Dashboard"
 import Groups from "./pages/Groups"
@@ -11,8 +11,9 @@ import EmailAccounts from "./pages/EmailAccounts"
 import Emails from "./pages/Emails"
 import AccountUploads from "./pages/AccountUploads"
 import TempMail from "./pages/TempMail"
-import TempInbox from "./pages/TempInbox"
 import { getToken, clearToken, api } from "./api"
+
+declare const __APP_VERSION__: string
 
 function getRoleFromToken(): string {
   const token = localStorage.getItem("token")
@@ -35,7 +36,6 @@ const allNavItems = [
   { to: "/email-accounts", icon: MailOpen, label: "邮箱管理", badge: false, adminOnly: true },
   { to: "/emails", icon: Mail, label: "收件箱", badge: true, adminOnly: true },
   { to: "/temp-mail", icon: MailPlus, label: "临时邮箱", badge: false, adminOnly: true },
-  { to: "/temp-inbox", icon: Inbox, label: "临时收件箱", badge: false, adminOnly: true },
   { to: "/system", icon: Settings, label: "系统设置", badge: false, adminOnly: true },
 ]
 
@@ -118,7 +118,7 @@ function AppLayout() {
           </button>
         </div>
         <div className="px-5 py-4 border-t border-gray-800 text-xs text-gray-600">
-          v1.0.0
+          v{typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "1.3.0"}
         </div>
       </aside>
 
@@ -132,7 +132,6 @@ function AppLayout() {
           <Route path="/email-accounts" element={<EmailAccounts />} />
           <Route path="/emails" element={<Emails />} />
           <Route path="/temp-mail" element={<TempMail />} />
-          <Route path="/temp-inbox" element={<TempInbox />} />
           <Route path="/system" element={<System />} />
         </Routes>
       </main>
