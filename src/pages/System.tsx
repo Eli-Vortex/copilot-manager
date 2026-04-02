@@ -49,15 +49,36 @@ export default function System() {
       setLog(res.log || [])
       if (res.ok) {
         setCheckState("done")
-        setTimeout(() => window.location.reload(), 5000)
+        pollHealthAndReload()
       } else {
         setCheckState("error")
         setErrorMsg(res.error || "更新失败")
       }
-    } catch (e: unknown) {
-      setCheckState("error")
-      setErrorMsg(e instanceof Error ? e.message : "更新失败")
+    } catch {
+      setCheckState("done")
+      pollHealthAndReload()
     }
+  }
+
+  const pollHealthAndReload = () => {
+    let attempts = 0
+    const maxAttempts = 60
+    const interval = setInterval(async () => {
+      attempts++
+      if (attempts >= maxAttempts) {
+        clearInterval(interval)
+        setCheckState("error")
+        setErrorMsg("服务重启超时，请手动刷新页面")
+        return
+      }
+      try {
+        const res = await fetch("/api/health", { cache: "no-store" })
+        if (res.ok) {
+          clearInterval(interval)
+          window.location.href = window.location.pathname + "?_=" + Date.now()
+        }
+      } catch {}
+    }, 2000)
   }
 
   const doChangePassword = async () => {
@@ -152,7 +173,7 @@ export default function System() {
 
         {checkState === "done" && (
           <div className="mt-5 flex items-center gap-2 text-emerald-400 text-sm">
-            <CheckCircle className="w-4 h-4" /> 更新成功！5 秒后自动刷新...
+            <Loader2 className="w-4 h-4 animate-spin" /> 更新成功！等待服务重启后自动刷新...
           </div>
         )}
 

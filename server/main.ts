@@ -28,6 +28,9 @@ const MIME: Record<string, string> = {
 
 app.use(cors())
 
+// Health endpoint — no auth required, used for post-update polling
+app.get("/api/health", (c) => c.json({ ok: true, ts: Date.now() }))
+
 app.route("/api/auth", authRoutes)
 
 app.use("/api/*", async (c, next) => {
@@ -65,13 +68,17 @@ if (fs.existsSync(distDir)) {
 
     if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
       const ext = path.extname(filePath)
-      return new Response(Bun.file(filePath), {
-        headers: { "Content-Type": MIME[ext] || "application/octet-stream" },
-      })
+      const headers: Record<string, string> = { "Content-Type": MIME[ext] || "application/octet-stream" }
+      // Hashed assets (Vite build output) can be cached indefinitely
+      if (reqPath.match(/\.[a-f0-9]{8,}\.(js|css)$/)) {
+        headers["Cache-Control"] = "public, max-age=31536000, immutable"
+      }
+      return new Response(Bun.file(filePath), { headers })
     }
 
+    // index.html must never be cached — ensures users always get the latest build
     return new Response(Bun.file(path.join(distDir, "index.html")), {
-      headers: { "Content-Type": "text/html; charset=utf-8" },
+      headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache, no-store, must-revalidate" },
     })
   })
 }
