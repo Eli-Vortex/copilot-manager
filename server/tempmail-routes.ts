@@ -1,8 +1,20 @@
 import { Hono } from "hono"
-import { tempInboxes, tempEmailsDb } from "./db"
+import { tempInboxes, tempEmailsDb, operationLogs } from "./db"
 import { createTempInbox, refreshTempInbox, deleteTempInbox, cleanupExpiredTempInboxes } from "./tempmail-service"
 
 export const tempmailRoutes = new Hono()
+
+function logTempAction(c: { get: (key: string) => unknown }, action: string, target_id = "", details: Record<string, unknown> = {}) {
+  const user = c.get("user") as { username?: string; role?: string } | undefined
+  operationLogs.create({
+    actor_username: user?.username || "system",
+    actor_role: user?.role || "system",
+    action,
+    target_type: "temp_inbox",
+    target_id,
+    details_json: JSON.stringify(details),
+  })
+}
 
 tempmailRoutes.get("/tempmail/inboxes", async (c) => {
   try {
@@ -18,6 +30,7 @@ tempmailRoutes.post("/tempmail/inboxes", async (c) => {
     const body = await c.req.json().catch(() => ({} as Record<string, unknown>))
     const note = typeof body?.note === "string" ? body.note : undefined
     const inbox = await createTempInbox(note)
+    logTempAction(c, "tempmail.create", inbox.id, { address: inbox.address })
     return c.json(inbox, 201)
   } catch (e) {
     return c.json({ error: String(e) }, 500)
@@ -31,6 +44,7 @@ tempmailRoutes.patch("/tempmail/inboxes/:id/note", async (c) => {
     const existing = tempInboxes.get(id)
     if (!existing) return c.json({ error: "Inbox not found" }, 404)
     tempInboxes.updateNote(id, body?.note ?? "")
+    logTempAction(c, "tempmail.update_note", id)
     return c.json(tempInboxes.get(id))
   } catch (e) {
     return c.json({ error: String(e) }, 500)
@@ -41,6 +55,7 @@ tempmailRoutes.delete("/tempmail/inboxes/:id", async (c) => {
   try {
     const id = c.req.param("id")
     await deleteTempInbox(id)
+    logTempAction(c, "tempmail.delete", id)
     return c.json({ ok: true })
   } catch (e) {
     return c.json({ error: String(e) }, 500)
@@ -50,6 +65,7 @@ tempmailRoutes.delete("/tempmail/inboxes/:id", async (c) => {
 tempmailRoutes.post("/tempmail/inboxes/cleanup", async (c) => {
   try {
     const deleted = await cleanupExpiredTempInboxes()
+    logTempAction(c, "tempmail.cleanup", "", { deleted })
     return c.json({ deleted })
   } catch (e) {
     return c.json({ error: String(e) }, 500)
@@ -60,6 +76,7 @@ tempmailRoutes.post("/tempmail/inboxes/:id/refresh", async (c) => {
   try {
     const id = c.req.param("id")
     const result = await refreshTempInbox(id)
+    logTempAction(c, "tempmail.refresh", id, { count: result.emails.length, expired: result.expired })
     return c.json(result)
   } catch (e) {
     return c.json({ error: String(e) }, 500)

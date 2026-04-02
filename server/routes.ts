@@ -25,6 +25,18 @@ const GITHUB_BASE = "https://github.com"
 const GITHUB_API_BASE = "https://api.github.com"
 const oauthHeaders = { "content-type": "application/json", accept: "application/json" }
 
+function logAction(c: { get: (key: string) => unknown }, action: string, target_type: string, target_id = "", details: Record<string, unknown> = {}) {
+  const user = c.get("user") as { username?: string; role?: string } | undefined
+  operationLogs.create({
+    actor_username: user?.username || "system",
+    actor_role: user?.role || "system",
+    action,
+    target_type,
+    target_id,
+    details_json: JSON.stringify(details),
+  })
+}
+
 async function validateGithubCopilotToken(githubToken: string): Promise<{ ok: boolean; login?: string; error?: string }> {
   try {
     const userRes = await fetch("https://api.github.com/user", {
@@ -129,6 +141,7 @@ api.post("/groups", async (c) => {
     if (!body.name?.trim()) return c.json({ error: "name is required" }, 400)
     if (!body.port || body.port < 1024 || body.port > 65535) return c.json({ error: "port must be 1024-65535" }, 400)
     const group = groups.create(body)
+    logAction(c, "group.create", "group", group.id, { name: group.name, port: group.port })
     return c.json(group, 201)
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)
@@ -147,6 +160,7 @@ api.put("/groups/:id", async (c) => {
     if (!body.port || body.port < 1024 || body.port > 65535) return c.json({ error: "port must be 1024-65535" }, 400)
     const group = groups.update(id, body)
     if (!group) return c.json({ error: "Group not found" }, 404)
+    logAction(c, "group.update", "group", group.id, { name: group.name, port: group.port })
     return c.json(group)
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)
@@ -162,21 +176,25 @@ api.delete("/groups/:id", (c) => {
   stopInstance(id)
   const ok = groups.delete(id)
   if (!ok) return c.json({ error: "Group not found" }, 404)
+  logAction(c, "group.delete", "group", id)
   return c.json({ ok: true })
 })
 
 api.post("/groups/:id/start", (c) => {
   const result = startInstance(c.req.param("id"))
+  if (result.ok) logAction(c, "group.start", "group", c.req.param("id"))
   return c.json(result, result.ok ? 200 : 400)
 })
 
 api.post("/groups/:id/stop", (c) => {
   const result = stopInstance(c.req.param("id"))
+  if (result.ok) logAction(c, "group.stop", "group", c.req.param("id"))
   return c.json(result, result.ok ? 200 : 400)
 })
 
 api.post("/groups/:id/restart", (c) => {
   const result = restartInstance(c.req.param("id"))
+  if (result.ok) logAction(c, "group.restart", "group", c.req.param("id"))
   return c.json(result, result.ok ? 200 : 400)
 })
 
@@ -262,6 +280,7 @@ api.post("/accounts", async (c) => {
     if (!body.name?.trim()) return c.json({ error: "name is required" }, 400)
     if (!body.github_token?.trim()) return c.json({ error: "github_token is required" }, 400)
     const account = accounts.create(body)
+    logAction(c, "account.create", "account", account.id, { name: account.name, group_id: account.group_id })
     return c.json(account, 201)
   } catch (err: unknown) {
     return c.json({ error: err instanceof Error ? err.message : String(err) }, 500)
@@ -283,6 +302,7 @@ api.put("/accounts/:id", async (c) => {
     if (!body.github_token?.trim()) return c.json({ error: "github_token is required" }, 400)
     const account = accounts.update(id, body)
     if (!account) return c.json({ error: "Account not found" }, 404)
+    logAction(c, "account.update", "account", account.id, { name: account.name, group_id: account.group_id })
     return c.json(account)
   } catch (err: unknown) {
     return c.json({ error: err instanceof Error ? err.message : String(err) }, 500)
@@ -292,6 +312,7 @@ api.put("/accounts/:id", async (c) => {
 api.delete("/accounts/:id", (c) => {
   const ok = accounts.delete(c.req.param("id"))
   if (!ok) return c.json({ error: "Account not found" }, 404)
+  logAction(c, "account.delete", "account", c.req.param("id"))
   return c.json({ ok: true })
 })
 
@@ -420,6 +441,7 @@ userApi.post("/accounts/submit", async (c) => {
       detected_login: valid.login || "",
       user_note: body.user_note?.trim() || "",
     })
+    logAction(c, "submission.create", "account_submission", submission.id, { detected_login: submission.detected_login })
     return c.json(submission, 201)
   } catch (err: unknown) {
     return c.json({ error: err instanceof Error ? err.message : String(err) }, 500)
@@ -444,6 +466,7 @@ userApi.post("/account-submissions/:id/cancel", (c) => {
   if (!user?.sub) return c.json({ error: "Unauthorized" }, 401)
   const updated = accountSubmissions.cancel(c.req.param("id"), user.sub)
   if (!updated) return c.json({ error: "Submission not found" }, 404)
+  logAction(c, "submission.cancel", "account_submission", updated.id)
   return c.json(updated)
 })
 
@@ -470,6 +493,7 @@ api.post("/account-submissions/:id/approve", async (c) => {
     group_id: body.group_id || null,
   })
   const updated = accountSubmissions.updateStatus(submission.id, "approved", `已加入账号管理: ${account.id}`, body.group_id || null)
+  logAction(c, "submission.approve", "account_submission", submission.id, { account_id: account.id, group_id: body.group_id || null })
   return c.json({ submission: updated, account })
 })
 
@@ -479,6 +503,7 @@ api.post("/account-submissions/:id/reject", async (c) => {
   if (submission.status !== "pending") return c.json({ error: "Only pending submissions can be rejected" }, 400)
   const body = await c.req.json<{ review_note?: string }>()
   const updated = accountSubmissions.updateStatus(submission.id, "rejected", body.review_note?.trim() || "审核拒绝")
+  logAction(c, "submission.reject", "account_submission", submission.id, { review_note: body.review_note?.trim() || "审核拒绝" })
   return c.json(updated)
 })
 
@@ -504,6 +529,7 @@ api.delete("/account-submissions/:id", (c) => {
   const submission = accountSubmissions.get(c.req.param("id"))
   if (!submission) return c.json({ error: "Submission not found" }, 404)
   accountSubmissions.deleteOne(submission.id)
+  logAction(c, "submission.delete", "account_submission", submission.id)
   return c.json({ ok: true })
 })
 
@@ -511,5 +537,6 @@ api.post("/account-submissions/bulk-delete", async (c) => {
   const body = await c.req.json<{ ids: string[] }>()
   if (!Array.isArray(body.ids) || body.ids.length === 0) return c.json({ error: "ids is required" }, 400)
   accountSubmissions.deleteMany(body.ids)
+  logAction(c, "submission.bulk_delete", "account_submission", "", { count: body.ids.length })
   return c.json({ ok: true })
 })

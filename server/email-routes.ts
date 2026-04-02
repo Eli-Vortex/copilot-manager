@@ -1,8 +1,20 @@
 import { Hono } from "hono"
-import { emailAccounts, emailsDb } from "./db"
+import { emailAccounts, emailsDb, operationLogs } from "./db"
 import { testConnection, fetchAndStoreEmails, fetchAllAccounts, fetchEmailBody } from "./email-service"
 
 export const emailRoutes = new Hono()
+
+function logEmailAction(c: { get: (key: string) => unknown }, action: string, target_id = "", details: Record<string, unknown> = {}) {
+  const user = c.get("user") as { username?: string; role?: string } | undefined
+  operationLogs.create({
+    actor_username: user?.username || "system",
+    actor_role: user?.role || "system",
+    action,
+    target_type: "email_account",
+    target_id,
+    details_json: JSON.stringify(details),
+  })
+}
 
 emailRoutes.get("/email-accounts", (c) => {
   return c.json(emailAccounts.list())
@@ -25,6 +37,7 @@ emailRoutes.post("/email-accounts", async (c) => {
     use_tls: use_tls ?? true,
     note,
   })
+  logEmailAction(c, "email_account.create", account.id, { email: account.email, host: account.imap_host })
 
   return c.json(account, 201)
 })
@@ -70,12 +83,14 @@ emailRoutes.put("/email-accounts/:id", async (c) => {
   })
 
   if (!updated) return c.json({ error: "Account not found" }, 404)
+  logEmailAction(c, "email_account.update", updated.id, { email: updated.email, host: updated.imap_host })
   return c.json(updated)
 })
 
 emailRoutes.delete("/email-accounts/:id", (c) => {
   const id = c.req.param("id")
   emailAccounts.delete(id)
+  logEmailAction(c, "email_account.delete", id)
   return c.json({ ok: true })
 })
 
@@ -100,11 +115,13 @@ emailRoutes.get("/emails/unread-count", (c) => {
 
 emailRoutes.post("/emails/mark-all-read", (c) => {
   emailsDb.markAllRead()
+  logEmailAction(c, "emails.mark_all_read")
   return c.json({ ok: true })
 })
 
 emailRoutes.post("/emails/clear", (c) => {
   emailsDb.clearAll()
+  logEmailAction(c, "emails.clear")
   return c.json({ ok: true })
 })
 
@@ -131,6 +148,7 @@ emailRoutes.get("/emails/:id", async (c) => {
 
 emailRoutes.post("/emails/fetch", async (c) => {
   const summary = await fetchAllAccounts()
+  logEmailAction(c, "emails.fetch_all", "", { accounts: summary.length })
   return c.json(summary)
 })
 
@@ -140,5 +158,6 @@ emailRoutes.post("/emails/fetch/:accountId", async (c) => {
   if (!account) return c.json({ error: "Account not found" }, 404)
 
   const newCount = await fetchAndStoreEmails(account)
+  logEmailAction(c, "emails.fetch_one", account.id, { newCount })
   return c.json({ accountId, name: account.name, newCount })
 })

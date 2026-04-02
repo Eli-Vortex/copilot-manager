@@ -4,13 +4,33 @@ import { Server, Users, Activity, CircleDot, Monitor, Clock, Cpu } from "lucide-
 
 import { api, type DashboardData } from "../api"
 
+function getRoleFromToken(): string {
+  const token = localStorage.getItem("token")
+  if (!token) return "user"
+  try {
+    const parts = token.split(".")
+    if (parts.length < 2) return "user"
+    const payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/"))) as { role?: string }
+    return payload.role || "user"
+  } catch {
+    return "user"
+  }
+}
+
 export default function Dashboard() {
   const [data, setData] = useState<DashboardData | null>(null)
   const [error, setError] = useState("")
+  const [opsStats, setOpsStats] = useState<{ operationLogCount: number; imapEmailCount: number; tempEmailCount: number; dbSizeBytes: number } | null>(null)
+  const [opLogs, setOpLogs] = useState<Array<{ id: string; actor_username: string; actor_role: string; action: string; target_type: string; target_id: string; details_json: string; created_at: string }>>([])
+  const [role] = useState(() => getRoleFromToken())
   const navigate = useNavigate()
 
   const load = () => {
     api.dashboard().then(setData).catch((e) => setError(e.message))
+    if (role === "admin") {
+      api.system.opsStats().then(setOpsStats).catch(() => undefined)
+      api.system.operationLogs(30).then(setOpLogs).catch(() => undefined)
+    }
   }
 
   useEffect(() => {
@@ -116,6 +136,38 @@ export default function Dashboard() {
           ))}
         </div>
       </div>
+
+      {role === "admin" && (
+        <div>
+          <h2 className="text-lg font-semibold mb-4">运维信息</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+            <div className="bg-surface-800 border border-gray-800 rounded-xl px-4 py-3">
+              <div className="text-xs text-gray-500">操作日志数</div>
+              <div className="text-lg font-semibold mt-1">{opsStats?.operationLogCount ?? "-"}</div>
+            </div>
+            <div className="bg-surface-800 border border-gray-800 rounded-xl px-4 py-3">
+              <div className="text-xs text-gray-500">邮件缓存</div>
+              <div className="text-sm text-gray-300 mt-1">IMAP {opsStats?.imapEmailCount ?? "-"} / Temp {opsStats?.tempEmailCount ?? "-"}</div>
+            </div>
+            <div className="bg-surface-800 border border-gray-800 rounded-xl px-4 py-3">
+              <div className="text-xs text-gray-500">数据库大小</div>
+              <div className="text-sm text-gray-300 mt-1">{opsStats ? `${(opsStats.dbSizeBytes / 1024 / 1024).toFixed(2)} MB` : "-"}</div>
+            </div>
+          </div>
+          <div className="bg-surface-800 border border-gray-800 rounded-xl p-4 max-h-[320px] overflow-y-auto">
+            <div className="text-sm font-medium mb-3 text-gray-200">最近操作日志</div>
+            {opLogs.length === 0 ? (
+              <div className="text-sm text-gray-500">暂无操作日志</div>
+            ) : opLogs.map((log) => (
+              <div key={log.id} className="border-b border-gray-800/60 py-2 last:border-0">
+                <div className="text-xs text-gray-500">{new Date(log.created_at).toLocaleString("zh-CN")}</div>
+                <div className="text-sm text-gray-300 mt-0.5">{log.actor_username || "system"} · {log.action}</div>
+                <div className="text-xs text-gray-600 mt-0.5">{log.target_type}{log.target_id ? ` / ${log.target_id}` : ""}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
     </div>
   )
