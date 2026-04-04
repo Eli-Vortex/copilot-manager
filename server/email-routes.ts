@@ -1,6 +1,7 @@
 import { Hono } from "hono"
 import { emailAccounts, emailsDb, operationLogs, tempEmailsDb, tempInboxes, type TempEmailRow, type TempInboxRow } from "./db"
 import { testConnection, fetchAndStoreEmails, fetchAllAccounts, fetchEmailBody } from "./email-service"
+import { PROVIDER_SERVICE } from "./tempmail-service"
 
 export const emailRoutes = new Hono()
 
@@ -32,7 +33,7 @@ function toInboxEmail(tempEmail: TempEmailRow, inbox: TempInboxRow) {
     folder: "INBOX",
     fetched_at: tempEmail.created_at,
     uid: null,
-    source: "tempmail.lol",
+    source: PROVIDER_SERVICE,
     account_name: inbox.note?.trim() || "临时邮箱",
     account_email: inbox.address,
   }
@@ -139,14 +140,14 @@ emailRoutes.get("/emails", (c) => {
   const unread_only = filter === "unread" || c.req.query("unread_only") === "true"
   const has_body = filter === "has_body" ? true : undefined
 
-  const imapEmails = source === "tempmail.lol"
+  const imapEmails = source === PROVIDER_SERVICE
     ? []
     : emailsDb.list({ account_id, limit: limit + offset, offset: 0, unread_only, has_body, source: source === "imap" ? "imap" : undefined })
 
   const tempEmails = account_id || source === "imap"
     ? []
     : listTempInboxEmails().filter((email) => {
-        if (source && source !== "tempmail.lol") return false
+        if (source && source !== PROVIDER_SERVICE) return false
         if (unread_only && email.is_read !== 0) return false
         if (has_body && !email.body_text && !email.body_html) return false
         return true
@@ -188,7 +189,7 @@ emailRoutes.get("/emails/:id", async (c) => {
     const inbox = tempInboxes.get(tempEmail.inbox_id)
     if (!inbox) return c.json({ error: "Email not found" }, 404)
     tempEmailsDb.markRead(id)
-    logEmailAction(c, "emails.read", id, { source: "tempmail.lol", inbox_id: inbox.id, body_fetched: false, marked_read: tempEmail.is_read !== 1 }, "email")
+    logEmailAction(c, "emails.read", id, { source: PROVIDER_SERVICE, inbox_id: inbox.id, body_fetched: false, marked_read: tempEmail.is_read !== 1 }, "email")
     return c.json({ ...toInboxEmail({ ...tempEmail, is_read: 1 }, inbox), is_read: 1 })
   }
 

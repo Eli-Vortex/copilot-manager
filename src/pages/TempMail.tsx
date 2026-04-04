@@ -219,7 +219,7 @@ export default function TempMail() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">临时邮箱</h1>
-          <p className="text-gray-500 text-sm mt-1">一次性邮箱地址，无需密码，有效期约 1 小时（免费版）</p>
+          <p className="text-gray-500 text-sm mt-1">由 7q5g2.us.ci 管理源创建的临时邮箱，无需密码，默认在面板内保留 30 天</p>
         </div>
         <div className="flex items-center gap-3">
           <button
@@ -368,7 +368,7 @@ export default function TempMail() {
                 />
               </div>
               <div className="bg-surface-700/50 border border-gray-700/50 rounded-lg px-3 py-2 text-xs text-gray-500">
-                免费版有效期约 1 小时，到期后自动过期。无需密码，创建后即可使用地址接收邮件。
+                邮箱由外部管理源创建并同步到本面板。无需密码，创建后即可使用地址接收邮件，默认保留 30 天。
               </div>
             </div>
             <div className="mt-6 flex justify-end gap-3">

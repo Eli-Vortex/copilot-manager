@@ -171,7 +171,7 @@ export default function Emails() {
           >
             <option value="">全部来源</option>
             <option value="imap">IMAP</option>
-            <option value="tempmail.lol">临时邮箱</option>
+            <option value="mail.7q5g2.us.ci">临时邮箱</option>
           </select>
         </div>
         <div className="flex items-center gap-2">
@@ -234,8 +234,8 @@ export default function Emails() {
                       <span className="text-xs bg-surface-700 text-gray-500 px-1.5 py-0.5 rounded">
                         {email.account_name || email.account_email}
                       </span>
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded border ${email.source === "tempmail.lol" ? "border-purple-500/30 text-purple-400 bg-purple-500/10" : "border-blue-500/30 text-blue-400 bg-blue-500/10"}`}>
-                        {email.source === "tempmail.lol" ? "Temp" : "IMAP"}
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded border ${email.source === "mail.7q5g2.us.ci" ? "border-purple-500/30 text-purple-400 bg-purple-500/10" : "border-blue-500/30 text-blue-400 bg-blue-500/10"}`}>
+                        {email.source === "mail.7q5g2.us.ci" ? "Temp" : "IMAP"}
                       </span>
                     </div>
                   )}
