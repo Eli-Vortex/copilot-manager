@@ -1,6 +1,98 @@
+import https from "node:https"
+import { randomUUID } from "node:crypto"
+
 import { tempInboxes, tempEmailsDb, operationLogs, type TempInboxRow, type TempEmailRow } from "./db"
 
-const BASE_URL = "https://api.tempmail.lol/v2"
+const PROVIDER_SERVICE = "mail.7q5g2.us.ci"
+const PROVIDER_API_BASE = process.env.TEMPMAIL_PROVIDER_API_URL || "https://cloudflare_temp_email.zibakiqal228.workers.dev"
+const PROVIDER_ADMIN_AUTH = process.env.TEMPMAIL_PROVIDER_ADMIN_AUTH || ""
+const PROVIDER_DOMAIN = process.env.TEMPMAIL_PROVIDER_DOMAIN || "7q5g2.us.ci"
+const PROVIDER_RETENTION_DAYS = Number(process.env.TEMPMAIL_PROVIDER_RETENTION_DAYS || 30)
+
+export { PROVIDER_SERVICE }
+
+type ProviderAddressRow = {
+  id: number
+  name: string
+  password?: string | null
+  source_meta?: string | null
+  created_at?: string
+  updated_at?: string
+  mail_count?: number
+  send_count?: number
+}
+
+type ProviderMailRow = {
+  id?: number | string
+  address?: string
+  source?: string
+  subject?: string
+  text?: string
+  message?: string
+  created_at?: string
+}
+
+function ensureProviderConfigured() {
+  if (!PROVIDER_ADMIN_AUTH.trim()) {
+    throw new Error("TEMPMAIL_PROVIDER_ADMIN_AUTH is not configured")
+  }
+}
+
+function callProvider<T>(pathname: string, init?: { method?: string; body?: Record<string, unknown> }): Promise<T> {
+  ensureProviderConfigured()
+  const url = new URL(pathname, PROVIDER_API_BASE)
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      url,
+      {
+        method: init?.method || "GET",
+        headers: {
+          "x-admin-auth": PROVIDER_ADMIN_AUTH,
+          "Content-Type": "application/json",
+        },
+        rejectUnauthorized: false,
+      },
+      (res) => {
+        let raw = ""
+        res.setEncoding("utf8")
+        res.on("data", (chunk) => { raw += chunk })
+        res.on("end", () => {
+          if ((res.statusCode || 500) >= 400) {
+            reject(new Error(`provider request failed: HTTP ${res.statusCode} ${raw}`.trim()))
+            return
+          }
+          try {
+            resolve(raw ? JSON.parse(raw) as T : ({} as T))
+          } catch (error) {
+            reject(error)
+          }
+        })
+      },
+    )
+    req.setTimeout(30000, () => req.destroy(new Error("provider request timed out")))
+    req.on("error", reject)
+    if (init?.body) req.write(JSON.stringify(init.body))
+    req.end()
+  })
+}
+
+function createMailboxName() {
+  return `cm${Date.now().toString(36)}${randomUUID().replace(/-/g, "").slice(0, 6)}`
+}
+
+function toIsoDate(value?: string) {
+  if (!value) return new Date().toISOString()
+  const parsed = new Date(`${value} UTC`)
+  return Number.isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString()
+}
+
+function normalizeMailContent(mail: ProviderMailRow) {
+  const html = typeof mail.message === "string" ? mail.message : ""
+  const text = typeof mail.text === "string" && mail.text.trim()
+    ? mail.text
+    : html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()
+  return { html, text }
+}
 
 export interface TempmailCreateResult {
   id: string
@@ -19,22 +111,22 @@ export interface TempmailRefreshResult {
 }
 
 export async function createTempInbox(note?: string): Promise<TempmailCreateResult> {
-  const res = await fetch(`${BASE_URL}/inbox/create`, {
+  const data = await callProvider<{ jwt: string; address: string; password?: string | null; address_id: number }>("/admin/new_address", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({}),
+    body: {
+      enablePrefix: true,
+      enableRandomSubdomain: false,
+      name: createMailboxName(),
+      domain: PROVIDER_DOMAIN,
+    },
   })
-  if (!res.ok) {
-    throw new Error(`tempmail.lol create failed: HTTP ${res.status}`)
-  }
-  const data = await res.json() as { address: string; token: string }
-  const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString()
+  const expiresAt = new Date(Date.now() + PROVIDER_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString()
   const inbox = tempInboxes.create({
     address: data.address,
-    token: data.token,
+    token: String(data.address_id),
     expires_at: expiresAt,
     note: note ?? "",
-    service: "tempmail.lol",
+    service: PROVIDER_SERVICE,
   })
   operationLogs.create({
     actor_username: "system",
@@ -42,7 +134,7 @@ export async function createTempInbox(note?: string): Promise<TempmailCreateResu
     action: "tempmail.create",
     target_type: "temp_inbox",
     target_id: inbox.id,
-    details_json: JSON.stringify({ address: inbox.address, expires_at: expiresAt }),
+    details_json: JSON.stringify({ address: inbox.address, expires_at: expiresAt, provider: PROVIDER_SERVICE }),
   })
   return {
     id: inbox.id,
@@ -60,39 +152,22 @@ export async function refreshTempInbox(inboxId: string): Promise<TempmailRefresh
   if (!inbox) {
     throw new Error(`Inbox ${inboxId} not found`)
   }
-  const res = await fetch(`${BASE_URL}/inbox?token=${encodeURIComponent(inbox.token)}`)
-  if (!res.ok) {
-    throw new Error(`tempmail.lol refresh failed: HTTP ${res.status}`)
-  }
-  type EmailEntry = { from: string; to?: string; subject: string; body?: string; html?: string | null; date?: number | string }
-  const data = await res.json() as EmailEntry[] | { emails?: EmailEntry[]; email?: EmailEntry[] } | null
-  if (data === null || data === undefined || (typeof data === "object" && !Array.isArray(data) && Object.keys(data).length === 0)) {
-    tempInboxes.updateStatus(inboxId, "expired")
-    return {
-      inbox: tempInboxes.get(inboxId),
-      emails: [],
-      expired: true,
-    }
-  }
-  const emailList: EmailEntry[] = Array.isArray(data) ? data : (data.emails ?? data.email ?? [])
+  const data = await callProvider<{ results: ProviderMailRow[]; count: number }>(`/admin/mails?limit=100&offset=0&address=${encodeURIComponent(inbox.address)}`)
+  const emailList = Array.isArray(data.results) ? data.results : []
   for (const email of emailList) {
-    const messageKey = email.date != null
-      ? String(email.date)
-      : `${email.subject}-${email.from}`
-    const receivedAt = typeof email.date === "number"
-      ? new Date(email.date).toISOString()
-      : typeof email.date === "string" && !isNaN(Date.parse(email.date))
-        ? new Date(email.date).toISOString()
-        : new Date().toISOString()
+    const messageKey = email.id != null
+      ? String(email.id)
+      : `${email.created_at || Date.now()}-${email.subject || "mail"}`
+    const { html, text } = normalizeMailContent(email)
     tempEmailsDb.upsert({
       inbox_id: inboxId,
       message_key: messageKey,
-      sender: email.from,
-      subject: email.subject,
-      text_body: email.body ?? "",
-      html_body: email.html ?? "",
+      sender: email.source || "",
+      subject: email.subject || "",
+      text_body: text,
+      html_body: html,
       is_read: 0,
-      received_at: receivedAt,
+      received_at: toIsoDate(email.created_at),
     })
   }
   tempInboxes.updateStatus(inboxId, "active")
@@ -120,6 +195,10 @@ export async function refreshAllActiveTempInboxes(): Promise<void> {
 export async function deleteTempInbox(inboxId: string): Promise<void> {
   const inbox = tempInboxes.get(inboxId)
   if (!inbox) return
+  const addressId = Number(inbox.token)
+  if (!Number.isNaN(addressId) && addressId > 0) {
+    await callProvider<{ success?: boolean }>(`/admin/delete_address/${addressId}`, { method: "DELETE" })
+  }
   tempEmailsDb.deleteByInbox(inboxId)
   tempInboxes.delete(inboxId)
   operationLogs.create({
