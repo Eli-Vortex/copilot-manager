@@ -66,6 +66,10 @@ Restart=always
 RestartSec=3
 Environment=NODE_ENV=production
 Environment=MANAGER_PORT=${SERVICE_PORT}
+Environment=TEMPMAIL_PROVIDER_ADMIN_AUTH=${TEMPMAIL_PROVIDER_ADMIN_AUTH:-}
+Environment=TEMPMAIL_PROVIDER_API_URL=${TEMPMAIL_PROVIDER_API_URL:-https://cloudflare_temp_email.zibakiqal228.workers.dev}
+Environment=TEMPMAIL_PROVIDER_DOMAIN=${TEMPMAIL_PROVIDER_DOMAIN:-7q5g2.us.ci}
+Environment=TEMPMAIL_PROVIDER_RETENTION_DAYS=${TEMPMAIL_PROVIDER_RETENTION_DAYS:-30}
 Environment=PATH=$HOME/.bun/bin:/usr/local/bin:/usr/bin:/bin
 
 [Install]

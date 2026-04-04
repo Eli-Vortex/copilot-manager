@@ -121,6 +121,10 @@ systemctl enable --now copilot-manager
 |------|--------|------|
 | `MANAGER_PORT` | `3000` | 管理面板端口 |
 | `MANAGER_DATA_DIR` | `./data` | 数据存储目录 |
+| `TEMPMAIL_PROVIDER_ADMIN_AUTH` | - | 7q5g2.us.ci 管理源密码（必填，不建议写入代码） |
+| `TEMPMAIL_PROVIDER_API_URL` | `https://cloudflare_temp_email.zibakiqal228.workers.dev` | 7q5g2.us.ci 后端 API 地址 |
+| `TEMPMAIL_PROVIDER_DOMAIN` | `7q5g2.us.ci` | 创建临时邮箱时使用的域名 |
+| `TEMPMAIL_PROVIDER_RETENTION_DAYS` | `30` | 本地面板保留临时邮箱的天数 |
 
 ## API 端点
 
